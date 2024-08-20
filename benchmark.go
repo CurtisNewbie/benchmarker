@@ -1,14 +1,12 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net/http"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/curtisnewbie/miso/miso"
 	"github.com/curtisnewbie/miso/util"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
@@ -55,11 +53,6 @@ type SendRequestFunc func() Result
 type LogExtraStatFunc func([]Benchmark) string
 
 func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logStatFunc ...LogExtraStatFunc) {
-	flag.Parse()
-	if Debug {
-		miso.SetLogLevel("debug")
-	}
-
 	if round < 2 {
 		round = 2
 	}
@@ -188,7 +181,7 @@ func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string,
 	p.Y.Min = float64(min.Milliseconds())
 
 	data := ToXYs(bench)
-	miso.Debugf("plot data: %+v", data)
+	util.DebugPrintlnf(Debug, "plot data: %+v", data)
 
 	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
 	util.Must(err)
