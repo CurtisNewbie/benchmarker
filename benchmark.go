@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/curtisnewbie/miso/util"
-	"golang.org/x/net/http2"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/plotutil"
@@ -18,7 +17,6 @@ import (
 
 var (
 	Debug                            bool
-	BenchmarkClient                  = &http.Client{Timeout: 5 * time.Second}
 	PlotWidth                        = 20 * vg.Inch
 	PlotHeight                       = 10 * vg.Inch
 	PlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
@@ -26,14 +24,14 @@ var (
 	DataOutputFilename               = "data_output.txt"
 )
 
-func init() {
-	largeNum := 100000
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = largeNum
-	transport.MaxIdleConnsPerHost = largeNum
-	http2.ConfigureTransport(transport)
-	transport.IdleConnTimeout = time.Minute * 30
-	BenchmarkClient.Transport = transport
+func newClient() *http.Client {
+	c := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	c.Transport = &http.Transport{
+		DisableKeepAlives: false,
+	}
+	return c
 }
 
 type BenchmarkStore struct {
@@ -60,49 +58,50 @@ func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logS
 	if round < 1 {
 		round = 1
 	}
-	round += 1
+	round += 1 // for warmup
 
 	store := NewBenchmarkStore(concurrent * (round - 1))
-	pool := util.NewAsyncPool(concurrent*(round-1), concurrent)
-	order := -concurrent // first round is only used to warmup.
+	pool := util.NewAsyncPool(concurrent, concurrent)
 	aw := util.NewAwaitFutures[any](pool)
-	for i := 0; i < round; i++ {
-		k := i
-		for i := 0; i < concurrent; i++ {
-			order += 1
-			j := order
-			aw.SubmitAsync(func() (any, error) {
-				triggerOnce(store, sendReqFunc, j, k > 0)
-				return nil, nil
-			})
-		}
+
+	for i := 0; i < concurrent; i++ {
+		aw.SubmitAsync(func() (any, error) {
+			client := newClient()
+			for j := 0; j < round; j++ {
+				triggerOnce(client, store, sendReqFunc, j > 0)
+			}
+			return nil, nil
+		})
 	}
 	aw.Await()
 
-	stats := PrintStats(store.bench, logStatFunc...)
+	stats := PrintStats(concurrent, round, store.bench, logStatFunc...)
 	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), concurrent,
 		stats.Max, stats.Min, stats.Avg, stats.Med)
 	util.Printlnf("\n--------- Plots ---------------\n")
 
-	SortOrder(store.bench) // already sorted by order in PrintStats(...)
-	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Request Order "+titleStats, PlotSortedByRequestOrderFilename)
+	SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
+	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
+		"X - Sorted By Request Timestamp", PlotSortedByRequestOrderFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
-	SortTime(store.bench)
-	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Latency "+titleStats, PlotSortedByLatencyFilename)
+	SortTook(store.bench)
+	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Latency "+titleStats,
+		"X - Sorted By Latency", PlotSortedByLatencyFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
 	util.Printlnf("\n-------------------------------\n")
 }
 
-func triggerOnce(store *BenchmarkStore, send SendRequestFunc, order int, record bool) {
+func triggerOnce(client *http.Client, store *BenchmarkStore, send SendRequestFunc, record bool) {
+	timestamp := time.Now().UnixMicro()
 	start := time.Now()
-	r := send(BenchmarkClient)
+	r := send(client)
 	took := time.Since(start)
 	if !record {
-		return
+		return // warmup only
 	}
 	bench := Benchmark{
-		Order:      order,
+		Timestamp:  timestamp,
 		Took:       took,
 		Success:    r.Success,
 		Extra:      r.Extra,
@@ -112,7 +111,7 @@ func triggerOnce(store *BenchmarkStore, send SendRequestFunc, order int, record 
 }
 
 type Benchmark struct {
-	Order      int
+	Timestamp  int64
 	Took       time.Duration
 	Success    bool
 	Extra      map[string]any
@@ -125,13 +124,13 @@ type Result struct {
 	Extra      map[string]any
 }
 
-func SortTime(bench []Benchmark) []Benchmark {
+func SortTook(bench []Benchmark) []Benchmark {
 	sort.Slice(bench, func(i, j int) bool { return bench[i].Took < bench[j].Took })
 	return bench
 }
 
-func SortOrder(bench []Benchmark) []Benchmark {
-	sort.Slice(bench, func(i, j int) bool { return bench[i].Order < bench[j].Order })
+func SortTimestamp(bench []Benchmark) []Benchmark {
+	sort.Slice(bench, func(i, j int) bool { return bench[i].Timestamp < bench[j].Timestamp })
 	return bench
 }
 
@@ -142,7 +141,7 @@ type Stats struct {
 	Med time.Duration
 }
 
-func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
+func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	var (
 		sum          time.Duration
 		stats        Stats
@@ -150,7 +149,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 		successCount = make(map[bool]int, len(bench))
 	)
 
-	SortTime(bench) // sort by duration for calculating median
+	SortTook(bench) // sort by duration for calculating median
 	if len(bench)%2 == 0 {
 		stats.Med = (bench[len(bench)/2].Took + bench[len(bench)/2-1].Took) / 2
 	} else {
@@ -158,6 +157,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	}
 
 	f, err := util.ReadWriteFile(DataOutputFilename)
+	_ = f.Truncate(0)
 	util.Must(err)
 	for i, b := range bench {
 		if i == 0 {
@@ -177,16 +177,16 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	}
 	stats.Avg = sum / time.Duration(len(bench))
 
-	SortOrder(bench) // sort by request order for readability
+	SortTimestamp(bench) // sort by request order for readability
 	for _, b := range bench {
-		f.WriteString(fmt.Sprintf("Order: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra))
+		f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp, b.Took, b.Success, b.HttpStatus, b.Extra))
 	}
 
-	SortTime(bench)
-	util.Printlnf("\n--------- Data ----------------\n")
-	util.Printlnf("data file: %v", DataOutputFilename)
-	util.Printlnf("\n--------- Count ---------------\n")
-	util.Printlnf("total_count: %v", len(bench))
+	SortTook(bench)
+
+	util.Printlnf("\n--------- Brief ---------------\n")
+	util.Printlnf("concurrency: %v", concurrent)
+	util.Printlnf("round: %v", round-1)
 	util.Printlnf("status_count: %v", statusCount)
 	util.Printlnf("success_count: %v", successCount)
 	util.Printlnf("\n--------- Latency -------------\n")
@@ -198,6 +198,8 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	util.Printlnf("p90: %v", percentile(bench, 90))
 	util.Printlnf("p95: %v", percentile(bench, 95))
 	util.Printlnf("p99: %v", percentile(bench, 99))
+	util.Printlnf("\n--------- Data ----------------\n")
+	util.Printlnf("data file: %v", DataOutputFilename)
 
 	if len(logStatFunc) > 0 {
 		util.Printlnf("\n--------- Extra ---------------\n")
@@ -211,10 +213,10 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	return stats
 }
 
-func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string, name string) {
+func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string, xlabel string, fname string) {
 	p := plot.New()
 	p.Title.Text = "\n" + title
-	p.X.Label.Text = "\nX\n"
+	p.X.Label.Text = "\n" + xlabel + "\n"
 	p.Y.Label.Text = "\nRequest Latency (ms)\n"
 	p.Y.Min = float64(min.Milliseconds())
 
@@ -224,7 +226,7 @@ func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string,
 	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
 	util.Must(err)
 
-	err = p.Save(PlotWidth, PlotHeight, name)
+	err = p.Save(PlotWidth, PlotHeight, fname)
 	util.Must(err)
 }
 

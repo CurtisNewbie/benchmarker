@@ -4,7 +4,6 @@ go 1.22.3
 
 require (
 	github.com/curtisnewbie/miso v0.1.5-beta.3
-	golang.org/x/net v0.25.0
 	gonum.org/v1/plot v0.14.0
 )
 
