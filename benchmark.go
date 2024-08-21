@@ -77,6 +77,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 
 	stats := PrintStats(store.bench, logStatFunc...)
 	titleStats := fmt.Sprintf("(Total %d Requests, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), stats.Max, stats.Min, stats.Avg, stats.Med)
+	util.Printlnf("\n--------- Plots ---------------\n")
 
 	SortOrder(store.bench) // already sorted by order in PrintStats(...)
 	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Request Order "+titleStats, PlotSortedByRequestOrderFilename)
@@ -85,6 +86,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 	SortTime(store.bench)
 	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Latency "+titleStats, PlotSortedByLatencyFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
+	util.Printlnf("\n-------------------------------\n")
 }
 
 func triggerOnce(store *BenchmarkStore, send SendRequestFunc, order int, record bool) {
@@ -173,7 +175,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 
 	SortTime(bench)
 	util.Printlnf("\n--------- Count ---------------\n")
-	util.Printlnf("total count: %v", len(bench))
+	util.Printlnf("total_count: %v", len(bench))
 	util.Printlnf("status_count: %v", statusCount)
 	util.Printlnf("success_count: %v", successCount)
 	util.Printlnf("\n--------- Latency -------------\n")
