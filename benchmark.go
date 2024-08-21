@@ -203,9 +203,9 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 
 func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string, name string) {
 	p := plot.New()
-	p.Title.Text = title
-	p.X.Label.Text = "X"
-	p.Y.Label.Text = "Request Latency (ms)"
+	p.Title.Text = "\n" + title
+	p.X.Label.Text = "\nX\n"
+	p.Y.Label.Text = "\nRequest Latency (ms)\n"
 	p.Y.Min = float64(min.Milliseconds())
 
 	data := ToXYs(bench)
