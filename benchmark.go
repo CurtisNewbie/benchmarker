@@ -158,7 +158,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Du
 
 	SortOrder(bench) // sort by request order for readability
 	for _, b := range bench {
-		util.Printlnf("Order: %d, Took: %v, Success: %b, HttpStatus: %d, Extra: %+v", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra)
+		util.Printlnf("Order: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra)
 	}
 
 	util.Printlnf("\n-------------------------------\n")
