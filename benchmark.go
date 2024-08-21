@@ -172,23 +172,27 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	}
 
 	SortTime(bench)
-	util.Printlnf("\n-------------------------------\n")
+	util.Printlnf("\n--------- Count ---------------\n")
 	util.Printlnf("total count: %v", len(bench))
+	util.Printlnf("status_count: %v", statusCount)
+	util.Printlnf("success_count: %v", successCount)
+	util.Printlnf("\n--------- Latency -------------\n")
 	util.Printlnf("min: %v", stats.Min)
 	util.Printlnf("max: %v", stats.Max)
 	util.Printlnf("median: %v", stats.Med)
 	util.Printlnf("avg: %v", stats.Avg/time.Duration(len(bench)))
-	util.Printlnf("status_count: %v", statusCount)
-	util.Printlnf("success_count: %v", successCount)
-	util.Printlnf("p75 latency: %v", percentile(bench, 75))
-	util.Printlnf("p90 latency: %v", percentile(bench, 90))
-	util.Printlnf("p95 latency: %v", percentile(bench, 95))
-	util.Printlnf("p99 latency: %v", percentile(bench, 99))
+	util.Printlnf("p75: %v", percentile(bench, 75))
+	util.Printlnf("p90: %v", percentile(bench, 90))
+	util.Printlnf("p95: %v", percentile(bench, 95))
+	util.Printlnf("p99: %v", percentile(bench, 99))
 
-	for _, f := range logStatFunc {
-		output := f(bench)
-		if output != "" {
-			util.Printlnf(output)
+	if len(logStatFunc) > 0 {
+		util.Printlnf("\n--------- Extra ---------------\n")
+		for _, f := range logStatFunc {
+			output := f(bench)
+			if output != "" {
+				util.Printlnf(output)
+			}
 		}
 	}
 	return stats
