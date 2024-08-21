@@ -103,11 +103,11 @@ type Benchmark struct {
 	Took       time.Duration
 	Success    bool
 	Extra      map[string]any
-	HttpStatus string
+	HttpStatus int
 }
 
 type Result struct {
-	HttpStatus string
+	HttpStatus int
 	Success    bool
 	Extra      map[string]any
 }
@@ -127,7 +127,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Du
 	var (
 		avg          time.Duration
 		med          time.Duration
-		statusCount  = make(map[string]int, len(bench))
+		statusCount  = make(map[int]int, len(bench))
 		successCount = make(map[bool]int, len(bench))
 	)
 
