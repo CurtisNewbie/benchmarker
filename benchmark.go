@@ -74,7 +74,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 		aw.Await()
 	}
 	min, max := PrintStats(store.bench, logStatFunc...)
-	SortOrder(store.bench)
+	// SortOrder(store.bench) // already sorted by order in PrintStats(...)
 	Plot(store.bench, min, max, fmt.Sprintf("Request Latency Plots - Sorted By Request Order (Total %d Requests)", len(store.bench)), PlotSortedByRequestOrderFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
@@ -125,7 +125,6 @@ func SortOrder(bench []Benchmark) []Benchmark {
 }
 
 func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Duration, max time.Duration) {
-
 	var (
 		avg          time.Duration
 		med          time.Duration
@@ -155,7 +154,11 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Du
 		statusCount[b.HttpStatus]++
 		successCount[b.Success]++
 		avg += b.Took
-		util.Printlnf("Took: %v, Order: %d, Success: %b, HttpStatus: %d, Extra: %+v", b.Took, b.Order, b.Success, b.HttpStatus, b.Extra)
+	}
+
+	SortOrder(bench) // sort by request order for readability
+	for _, b := range bench {
+		util.Printlnf("Order: %d, Took: %v, Success: %b, HttpStatus: %d, Extra: %+v", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra)
 	}
 
 	util.Printlnf("\n-------------------------------\n")
