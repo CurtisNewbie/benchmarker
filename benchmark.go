@@ -76,7 +76,8 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 	}
 
 	stats := PrintStats(store.bench, logStatFunc...)
-	titleStats := fmt.Sprintf("(Total %d Requests, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), stats.Max, stats.Min, stats.Avg, stats.Med)
+	titleStats := fmt.Sprintf("(Total %d Requests, Parallelism: %v, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), parallel,
+		stats.Max, stats.Min, stats.Avg, stats.Med)
 	util.Printlnf("\n--------- Plots ---------------\n")
 
 	SortOrder(store.bench) // already sorted by order in PrintStats(...)
