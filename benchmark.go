@@ -76,9 +76,11 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 	min, max := PrintStats(store.bench, logStatFunc...)
 	SortOrder(store.bench)
 	Plot(store.bench, min, max, fmt.Sprintf("Request Latency Plots - Sorted By Request Order (Total %d Requests)", len(store.bench)), PlotSortedByRequestOrderFilename)
+	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
 	SortTime(store.bench)
 	Plot(store.bench, min, max, fmt.Sprintf("Request Latency Plots - Sorted By Latency (Total %d Requests)", len(store.bench)), PlotSortedByLatencyFilename)
+	util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
 }
 
 func triggerOnce(store *BenchmarkStore, send SendRequestFunc, order int, record bool) {
