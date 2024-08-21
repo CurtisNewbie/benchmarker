@@ -16,7 +16,7 @@ import (
 
 var (
 	Debug                            bool
-	Client                           = &http.Client{Timeout: 15 * time.Second}
+	BenchmarkClient                  = &http.Client{Timeout: 15 * time.Second}
 	PlotWidth                        = 20 * vg.Inch
 	PlotHeight                       = 10 * vg.Inch
 	PlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
@@ -24,12 +24,12 @@ var (
 )
 
 func init() {
-	largeNum := 1000
+	largeNum := 100000
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = largeNum
 	transport.MaxIdleConnsPerHost = largeNum
 	transport.IdleConnTimeout = time.Minute * 30
-	Client.Transport = transport
+	BenchmarkClient.Transport = transport
 }
 
 type BenchmarkStore struct {
@@ -49,7 +49,7 @@ func NewBenchmarkStore(cnt int) *BenchmarkStore {
 	}
 }
 
-type SendRequestFunc func() Result
+type SendRequestFunc func(c *http.Client) Result
 type LogExtraStatFunc func([]Benchmark) string
 
 func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logStatFunc ...LogExtraStatFunc) {
@@ -85,7 +85,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 
 func triggerOnce(store *BenchmarkStore, send SendRequestFunc, order int, record bool) {
 	start := time.Now()
-	r := send()
+	r := send(BenchmarkClient)
 	took := time.Since(start)
 	if !record {
 		return
