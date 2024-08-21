@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/curtisnewbie/miso/util"
+	"golang.org/x/net/http2"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/plotutil"
@@ -17,7 +18,7 @@ import (
 
 var (
 	Debug                            bool
-	BenchmarkClient                  = &http.Client{Timeout: 15 * time.Second}
+	BenchmarkClient                  = &http.Client{Timeout: 5 * time.Second}
 	PlotWidth                        = 20 * vg.Inch
 	PlotHeight                       = 10 * vg.Inch
 	PlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
@@ -30,6 +31,7 @@ func init() {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = largeNum
 	transport.MaxIdleConnsPerHost = largeNum
+	http2.ConfigureTransport(transport)
 	transport.IdleConnTimeout = time.Minute * 30
 	BenchmarkClient.Transport = transport
 }
