@@ -22,6 +22,7 @@ var (
 	PlotHeight                       = 10 * vg.Inch
 	PlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
 	PlotSortedByLatencyFilename      = "plots_sorted_by_latency.png"
+	DataOutputFilename               = "data_output.txt"
 )
 
 func init() {
@@ -60,11 +61,11 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 	round += 1
 
 	store := NewBenchmarkStore(parallel * (round - 1))
-	pool := util.NewAsyncPool(parallel*2, parallel)
+	pool := util.NewAsyncPool(parallel*(round-1), parallel)
 	order := -parallel // first round is only used to warmup.
+	aw := util.NewAwaitFutures[any](pool)
 	for i := 0; i < round; i++ {
 		k := i
-		aw := util.NewAwaitFutures[any](pool)
 		for i := 0; i < parallel; i++ {
 			order += 1
 			j := order
@@ -73,8 +74,8 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 				return nil, nil
 			})
 		}
-		aw.Await()
 	}
+	aw.Await()
 
 	stats := PrintStats(store.bench, logStatFunc...)
 	titleStats := fmt.Sprintf("(Total %d Requests, Parallelism: %v, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), parallel,
@@ -141,6 +142,7 @@ type Stats struct {
 
 func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	var (
+		sum          time.Duration
 		stats        Stats
 		statusCount  = make(map[int]int, len(bench))
 		successCount = make(map[bool]int, len(bench))
@@ -153,6 +155,8 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 		stats.Med = bench[len(bench)/2].Took
 	}
 
+	f, err := util.ReadWriteFile(DataOutputFilename)
+	util.Must(err)
 	for i, b := range bench {
 		if i == 0 {
 			stats.Min = b.Took
@@ -167,15 +171,18 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 		}
 		statusCount[b.HttpStatus]++
 		successCount[b.Success]++
-		stats.Avg += b.Took
+		sum += b.Took
 	}
+	stats.Avg = sum / time.Duration(len(bench))
 
 	SortOrder(bench) // sort by request order for readability
 	for _, b := range bench {
-		util.Printlnf("Order: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra)
+		f.WriteString(fmt.Sprintf("Order: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra))
 	}
 
 	SortTime(bench)
+	util.Printlnf("\n--------- Data ----------------\n")
+	util.Printlnf("data file: %v", DataOutputFilename)
 	util.Printlnf("\n--------- Count ---------------\n")
 	util.Printlnf("total_count: %v", len(bench))
 	util.Printlnf("status_count: %v", statusCount)
@@ -184,7 +191,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	util.Printlnf("min: %v", stats.Min)
 	util.Printlnf("max: %v", stats.Max)
 	util.Printlnf("median: %v", stats.Med)
-	util.Printlnf("avg: %v", stats.Avg/time.Duration(len(bench)))
+	util.Printlnf("avg: %v", stats.Avg)
 	util.Printlnf("p75: %v", percentile(bench, 75))
 	util.Printlnf("p90: %v", percentile(bench, 90))
 	util.Printlnf("p95: %v", percentile(bench, 95))
