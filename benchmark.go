@@ -2,6 +2,7 @@ package benchmarker
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"sort"
@@ -48,6 +49,40 @@ func (b *BenchmarkStore) Add(bm Benchmark) {
 func NewBenchmarkStore(cnt int) *BenchmarkStore {
 	return &BenchmarkStore{
 		bench: make([]Benchmark, 0, cnt),
+	}
+}
+
+type BuildRequestFunc func() (*http.Request, error)
+type ParseResponseFunc func(buf []byte, statusCode int) Result
+
+func NewRequestSender(buildReq BuildRequestFunc, parseRes ParseResponseFunc) SendRequestFunc {
+	errResult := func(err error, httpStatus int) Result {
+		return Result{
+			HttpStatus: httpStatus,
+			Success:    false,
+			Extra: map[string]any{
+				"ERROR": err.Error(),
+			},
+		}
+	}
+
+	return func(c *http.Client) Result {
+		req, err := buildReq()
+		if err != nil {
+			return errResult(err, 0)
+		}
+
+		res, err := c.Do(req)
+		if err != nil {
+			return errResult(err, res.StatusCode)
+		}
+
+		buf, err := io.ReadAll(res.Body)
+		if err != nil {
+			return errResult(err, res.StatusCode)
+		}
+
+		return parseRes(buf, res.StatusCode)
 	}
 }
 
@@ -179,7 +214,8 @@ func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...Log
 
 	SortTimestamp(bench) // sort by request order for readability
 	for _, b := range bench {
-		f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp, b.Took, b.Success, b.HttpStatus, b.Extra))
+		f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp,
+			b.Took, b.Success, b.HttpStatus, b.Extra))
 	}
 
 	SortTook(bench)
