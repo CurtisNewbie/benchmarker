@@ -54,9 +54,10 @@ type SendRequestFunc func(c *http.Client) Result
 type LogExtraStatFunc func([]Benchmark) string
 
 func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logStatFunc ...LogExtraStatFunc) {
-	if round < 2 {
-		round = 2
+	if round < 1 {
+		round = 1
 	}
+	round += 1
 
 	store := NewBenchmarkStore(parallel * (round - 1))
 	pool := util.NewAsyncPool(parallel*2, parallel)
