@@ -56,19 +56,19 @@ func NewBenchmarkStore(cnt int) *BenchmarkStore {
 type SendRequestFunc func(c *http.Client) Result
 type LogExtraStatFunc func([]Benchmark) string
 
-func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logStatFunc ...LogExtraStatFunc) {
+func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logStatFunc ...LogExtraStatFunc) {
 	if round < 1 {
 		round = 1
 	}
 	round += 1
 
-	store := NewBenchmarkStore(parallel * (round - 1))
-	pool := util.NewAsyncPool(parallel*(round-1), parallel)
-	order := -parallel // first round is only used to warmup.
+	store := NewBenchmarkStore(concurrent * (round - 1))
+	pool := util.NewAsyncPool(concurrent*(round-1), concurrent)
+	order := -concurrent // first round is only used to warmup.
 	aw := util.NewAwaitFutures[any](pool)
 	for i := 0; i < round; i++ {
 		k := i
-		for i := 0; i < parallel; i++ {
+		for i := 0; i < concurrent; i++ {
 			order += 1
 			j := order
 			aw.SubmitAsync(func() (any, error) {
@@ -80,7 +80,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 	aw.Await()
 
 	stats := PrintStats(store.bench, logStatFunc...)
-	titleStats := fmt.Sprintf("(Total %d Requests, Parallelism: %v, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), parallel,
+	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), concurrent,
 		stats.Max, stats.Min, stats.Avg, stats.Med)
 	util.Printlnf("\n--------- Plots ---------------\n")
 

@@ -30,7 +30,7 @@ func TestStartBenchmark(t *testing.T) {
 			Success:    r.StatusCode == 200,
 		}
 	}
-	parallel := 10
+	concurrent := 10
 	round := 3
-	benchmarker.StartBenchmark(parallel, round, sendRequest)
+	benchmarker.StartBenchmark(concurrent, round, sendRequest)
 }
