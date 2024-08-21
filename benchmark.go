@@ -1,4 +1,4 @@
-package main
+package benchmarker
 
 import (
 	"fmt"
