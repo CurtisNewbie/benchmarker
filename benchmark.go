@@ -73,13 +73,16 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 		}
 		aw.Await()
 	}
-	min, max := PrintStats(store.bench, logStatFunc...)
+
+	stats := PrintStats(store.bench, logStatFunc...)
+	titleStats := fmt.Sprintf("(Total %d Requests, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), stats.Max, stats.Min, stats.Avg, stats.Med)
+
 	// SortOrder(store.bench) // already sorted by order in PrintStats(...)
-	Plot(store.bench, min, max, fmt.Sprintf("Request Latency Plots - Sorted By Request Order (Total %d Requests)", len(store.bench)), PlotSortedByRequestOrderFilename)
+	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Request Order "+titleStats, PlotSortedByRequestOrderFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
 	SortTime(store.bench)
-	Plot(store.bench, min, max, fmt.Sprintf("Request Latency Plots - Sorted By Latency (Total %d Requests)", len(store.bench)), PlotSortedByLatencyFilename)
+	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Latency "+titleStats, PlotSortedByLatencyFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
 }
 
@@ -124,36 +127,42 @@ func SortOrder(bench []Benchmark) []Benchmark {
 	return bench
 }
 
-func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Duration, max time.Duration) {
+type Stats struct {
+	Min time.Duration
+	Max time.Duration
+	Avg time.Duration
+	Med time.Duration
+}
+
+func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 	var (
-		avg          time.Duration
-		med          time.Duration
+		stats        Stats
 		statusCount  = make(map[int]int, len(bench))
 		successCount = make(map[bool]int, len(bench))
 	)
 
 	SortTime(bench) // sort by duration for calculating median
 	if len(bench)%2 == 0 {
-		med = (bench[len(bench)/2].Took + bench[len(bench)/2-1].Took) / 2
+		stats.Med = (bench[len(bench)/2].Took + bench[len(bench)/2-1].Took) / 2
 	} else {
-		med = bench[len(bench)/2].Took
+		stats.Med = bench[len(bench)/2].Took
 	}
 
 	for i, b := range bench {
 		if i == 0 {
-			min = b.Took
-			max = b.Took
+			stats.Min = b.Took
+			stats.Max = b.Took
 		} else {
-			if b.Took > max {
-				max = b.Took
+			if b.Took > stats.Max {
+				stats.Max = b.Took
 			}
-			if b.Took < min {
-				min = b.Took
+			if b.Took < stats.Min {
+				stats.Min = b.Took
 			}
 		}
 		statusCount[b.HttpStatus]++
 		successCount[b.Success]++
-		avg += b.Took
+		stats.Avg += b.Took
 	}
 
 	SortOrder(bench) // sort by request order for readability
@@ -163,10 +172,10 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Du
 
 	util.Printlnf("\n-------------------------------\n")
 	util.Printlnf("total: %v", len(bench))
-	util.Printlnf("min: %v", min)
-	util.Printlnf("max: %v", max)
-	util.Printlnf("median: %v", med)
-	util.Printlnf("avg: %v", avg/time.Duration(len(bench)))
+	util.Printlnf("min: %v", stats.Min)
+	util.Printlnf("max: %v", stats.Max)
+	util.Printlnf("median: %v", stats.Med)
+	util.Printlnf("avg: %v", stats.Avg/time.Duration(len(bench)))
 	util.Printlnf("status_count: %v", statusCount)
 	util.Printlnf("success_count: %v", successCount)
 	for _, f := range logStatFunc {
@@ -175,7 +184,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Du
 			util.Printlnf(output)
 		}
 	}
-	return min, max
+	return stats
 }
 
 func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string, name string) {
