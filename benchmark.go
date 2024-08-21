@@ -185,6 +185,7 @@ func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...Log
 	SortTook(bench)
 
 	util.Printlnf("\n--------- Brief ---------------\n")
+	util.Printlnf("total_requests: %v", concurrent*(round-1))
 	util.Printlnf("concurrency: %v", concurrent)
 	util.Printlnf("round: %v", round-1)
 	util.Printlnf("status_count: %v", statusCount)
