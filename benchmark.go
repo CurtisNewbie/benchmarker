@@ -2,6 +2,7 @@ package benchmarker
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"sync"
@@ -77,7 +78,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 	stats := PrintStats(store.bench, logStatFunc...)
 	titleStats := fmt.Sprintf("(Total %d Requests, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), stats.Max, stats.Min, stats.Avg, stats.Med)
 
-	// SortOrder(store.bench) // already sorted by order in PrintStats(...)
+	SortOrder(store.bench) // already sorted by order in PrintStats(...)
 	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Request Order "+titleStats, PlotSortedByRequestOrderFilename)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
@@ -170,14 +171,20 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
 		util.Printlnf("Order: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v", b.Order, b.Took, b.Success, b.HttpStatus, b.Extra)
 	}
 
+	SortTime(bench)
 	util.Printlnf("\n-------------------------------\n")
-	util.Printlnf("total: %v", len(bench))
+	util.Printlnf("total count: %v", len(bench))
 	util.Printlnf("min: %v", stats.Min)
 	util.Printlnf("max: %v", stats.Max)
 	util.Printlnf("median: %v", stats.Med)
 	util.Printlnf("avg: %v", stats.Avg/time.Duration(len(bench)))
 	util.Printlnf("status_count: %v", statusCount)
 	util.Printlnf("success_count: %v", successCount)
+	util.Printlnf("p75 latency: %v", percentile(bench, 75))
+	util.Printlnf("p90 latency: %v", percentile(bench, 90))
+	util.Printlnf("p95 latency: %v", percentile(bench, 95))
+	util.Printlnf("p99 latency: %v", percentile(bench, 99))
+
 	for _, f := range logStatFunc {
 		output := f(bench)
 		if output != "" {
@@ -213,4 +220,9 @@ func ToXYs(bench []Benchmark) plotter.XYs {
 		})
 	}
 	return pts
+}
+
+func percentile(bench []Benchmark, percentile float64) time.Duration {
+	idx := math.Ceil(percentile / 100.0 * float64(len(bench)))
+	return bench[int(idx)-1].Took
 }
