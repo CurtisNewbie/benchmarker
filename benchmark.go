@@ -59,7 +59,7 @@ func StartBenchmark(parallel int, round int, sendReqFunc SendRequestFunc, logSta
 
 	store := NewBenchmarkStore(parallel * (round - 1))
 	pool := util.NewAsyncPool(parallel*2, parallel)
-	order := 0
+	order := -parallel // first round is only used to warmup.
 	for i := 0; i < round; i++ {
 		k := i
 		aw := util.NewAwaitFutures[any](pool)
