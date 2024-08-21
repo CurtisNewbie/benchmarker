@@ -131,7 +131,7 @@ func PrintStats(bench []Benchmark, logStatFunc ...LogExtraStatFunc) (min time.Du
 		successCount = make(map[bool]int, len(bench))
 	)
 
-	SortTime(bench) // store by duration for calculating median
+	SortTime(bench) // sort by duration for calculating median
 	if len(bench)%2 == 0 {
 		med = (bench[len(bench)/2].Took + bench[len(bench)/2-1].Took) / 2
 	} else {
