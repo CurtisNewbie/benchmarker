@@ -112,8 +112,8 @@ func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logS
 	aw.Await()
 
 	stats := PrintStats(concurrent, round, store.bench, logStatFunc...)
-	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v)", len(store.bench), concurrent,
-		stats.Max, stats.Min, stats.Avg, stats.Med)
+	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, p75: %v, p90: %v, p95: %v, p99: %v)",
+		len(store.bench), concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.P75.Took, stats.P90.Took, stats.P95.Took, stats.P99.Took)
 	util.Printlnf("\n--------- Plots ---------------\n")
 
 	SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
@@ -277,8 +277,10 @@ func Plot(bench []Benchmark, stat Stats, title string, xlabel string, fname stri
 	p.Title.Text = "\n" + title
 	p.X.Label.Text = "\n" + xlabel + "\n"
 	p.Y.Label.Text = "\nRequest Latency (ms)\n"
-	p.Y.Min = float64(stat.Min.Milliseconds()) - 10
-	if p.Y.Min < 0 {
+	p.Y.Min = float64(stat.Min.Milliseconds())
+	if p.Y.Min > 10 {
+		p.Y.Min -= 10
+	} else {
 		p.Y.Min = 0
 	}
 	p.Y.Max = float64(stat.Max.Milliseconds()) + 10
@@ -341,6 +343,8 @@ func drawPercentileLine(p *plot.Plot, index int, label string, color int) {
 	lineTop := p.Y.Max
 	if lineTop > 1 {
 		lineTop -= 1
+	} else if lineTop > .5 {
+		lineTop -= .5
 	}
 	xys[1] = plotter.XY{X: float64(index), Y: lineTop}
 
