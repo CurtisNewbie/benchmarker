@@ -19,6 +19,6 @@ func TestStartBenchmark(t *testing.T) {
 			}
 		})
 	concurrent := 10
-	round := 3
+	round := 50
 	benchmarker.StartBenchmark(concurrent, round, sendRequest)
 }

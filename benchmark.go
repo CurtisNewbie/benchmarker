@@ -117,13 +117,13 @@ func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logS
 	util.Printlnf("\n--------- Plots ---------------\n")
 
 	SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
-	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
-		"X - Sorted By Request Timestamp", PlotSortedByRequestOrderFilename)
+	Plot(store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
+		"X - Sorted By Request Timestamp", PlotSortedByRequestOrderFilename, false)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
 	SortTook(store.bench)
-	Plot(store.bench, stats.Min, stats.Max, "Request Latency Plots - Sorted By Latency "+titleStats,
-		"X - Sorted By Latency", PlotSortedByLatencyFilename)
+	Plot(store.bench, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
+		"X - Sorted By Latency", PlotSortedByLatencyFilename, true)
 	util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
 	util.Printlnf("\n-------------------------------\n")
 }
@@ -171,10 +171,18 @@ func SortTimestamp(bench []Benchmark) []Benchmark {
 }
 
 type Stats struct {
-	Min time.Duration
-	Max time.Duration
-	Avg time.Duration
-	Med time.Duration
+	Min      time.Duration
+	Max      time.Duration
+	Avg      time.Duration
+	Med      time.Duration
+	P99      Benchmark
+	P95      Benchmark
+	P90      Benchmark
+	P75      Benchmark
+	P99Index int
+	P95Index int
+	P90Index int
+	P75Index int
 }
 
 func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
@@ -232,10 +240,23 @@ func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...Log
 	util.Printlnf("max: %v", stats.Max)
 	util.Printlnf("median: %v", stats.Med)
 	util.Printlnf("avg: %v", stats.Avg)
-	util.Printlnf("p75: %v", percentile(bench, 75))
-	util.Printlnf("p90: %v", percentile(bench, 90))
-	util.Printlnf("p95: %v", percentile(bench, 95))
-	util.Printlnf("p99: %v", percentile(bench, 99))
+
+	p75, p75i := percentile(bench, 75)
+	p90, p90i := percentile(bench, 90)
+	p95, p95i := percentile(bench, 95)
+	p99, p99i := percentile(bench, 99)
+	stats.P75 = p75
+	stats.P90 = p90
+	stats.P95 = p95
+	stats.P99 = p99
+	stats.P75Index = p75i
+	stats.P90Index = p90i
+	stats.P95Index = p95i
+	stats.P99Index = p99i
+	util.Printlnf("p75: %v", p75.Took)
+	util.Printlnf("p90: %v", p90.Took)
+	util.Printlnf("p95: %v", p95.Took)
+	util.Printlnf("p99: %v", p99.Took)
 	util.Printlnf("\n--------- Data ----------------\n")
 	util.Printlnf("data file: %v", DataOutputFilename)
 
@@ -251,16 +272,16 @@ func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...Log
 	return stats
 }
 
-func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string, xlabel string, fname string) {
+func Plot(bench []Benchmark, stat Stats, title string, xlabel string, fname string, drawPercentile bool) {
 	p := plot.New()
 	p.Title.Text = "\n" + title
 	p.X.Label.Text = "\n" + xlabel + "\n"
 	p.Y.Label.Text = "\nRequest Latency (ms)\n"
-	p.Y.Min = float64(min.Milliseconds()) - 10
+	p.Y.Min = float64(stat.Min.Milliseconds()) - 10
 	if p.Y.Min < 0 {
 		p.Y.Min = 0
 	}
-	p.Y.Max = float64(max.Milliseconds()) + 10
+	p.Y.Max = float64(stat.Max.Milliseconds()) + 10
 
 	data := ToXYs(bench)
 	util.DebugPrintlnf(Debug, "plot data: %+v", data)
@@ -268,12 +289,19 @@ func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string,
 	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
 	util.Must(err)
 
+	if drawPercentile {
+		drawPercentileLine(p, stat.P99Index, "P99", 1)
+		drawPercentileLine(p, stat.P95Index, "P95", 2)
+		drawPercentileLine(p, stat.P90Index, "P90", 3)
+		drawPercentileLine(p, stat.P75Index, "P75", 4)
+	}
+
 	if PlotInclMinMaxLabels {
 		labels := make([]string, len(bench))
 		for i, b := range bench {
-			if b.Took >= max {
+			if b.Took >= stat.Max {
 				labels[i] = b.Took.String()
-			} else if b.Took <= min {
+			} else if b.Took <= stat.Min {
 				labels[i] = b.Took.String()
 			}
 		}
@@ -301,7 +329,39 @@ func ToXYs(bench []Benchmark) plotter.XYs {
 	return pts
 }
 
-func percentile(bench []Benchmark, percentile float64) time.Duration {
+func percentile(bench []Benchmark, percentile float64) (Benchmark, int) {
 	idx := math.Ceil(percentile / 100.0 * float64(len(bench)))
-	return bench[int(idx)-1].Took
+	i := int(idx) - 1
+	return bench[i], i
+}
+
+func drawPercentileLine(p *plot.Plot, index int, label string, color int) {
+	xys := make(plotter.XYs, 2)
+	xys[0] = plotter.XY{X: float64(index), Y: 0}
+	lineTop := p.Y.Max
+	if lineTop > 1 {
+		lineTop -= 1
+	}
+	xys[1] = plotter.XY{X: float64(index), Y: lineTop}
+
+	line, err := plotter.NewLine(xys)
+	if err == nil {
+		line.LineStyle.Color = plotutil.Color(color)
+		p.Add(line)
+
+		xys[1].Y += 0.1
+		lables := make([]string, 2)
+		lables[1] = label
+		lineLabels, err := plotter.NewLabels(plotter.XYLabels{
+			XYs:    xys,
+			Labels: lables,
+		})
+		if err == nil {
+			p.Add(lineLabels)
+		} else {
+			util.Printlnf("failed to add percentile line labels, %v", err)
+		}
+	} else {
+		util.Printlnf("failed to add percentile line, %v", err)
+	}
 }
