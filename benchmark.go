@@ -22,6 +22,7 @@ var (
 	PlotHeight                       = 10 * vg.Inch
 	PlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
 	PlotSortedByLatencyFilename      = "plots_sorted_by_latency.png"
+	PlotInclMinMaxLabels             = true
 	DataOutputFilename               = "data_output.txt"
 )
 
@@ -255,13 +256,35 @@ func Plot(bench []Benchmark, min time.Duration, max time.Duration, title string,
 	p.Title.Text = "\n" + title
 	p.X.Label.Text = "\n" + xlabel + "\n"
 	p.Y.Label.Text = "\nRequest Latency (ms)\n"
-	p.Y.Min = float64(min.Milliseconds())
+	p.Y.Min = float64(min.Milliseconds()) - 10
+	if p.Y.Min < 0 {
+		p.Y.Min = 0
+	}
+	p.Y.Max = float64(max.Milliseconds()) + 10
 
 	data := ToXYs(bench)
 	util.DebugPrintlnf(Debug, "plot data: %+v", data)
 
 	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
 	util.Must(err)
+
+	if PlotInclMinMaxLabels {
+		labels := make([]string, len(bench))
+		for i, b := range bench {
+			if b.Took >= max {
+				labels[i] = b.Took.String()
+			} else if b.Took <= min {
+				labels[i] = b.Took.String()
+			}
+		}
+		bl, err := plotter.NewLabels(plotter.XYLabels{
+			XYs:    data,
+			Labels: labels,
+		})
+		if err == nil {
+			p.Add(bl)
+		}
+	}
 
 	err = p.Save(PlotWidth, PlotHeight, fname)
 	util.Must(err)
