@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/curtisnewbie/miso/util"
@@ -17,12 +18,14 @@ import (
 )
 
 var (
-	Debug                            bool
+	Debug                            = false
+	GeneratePlots                    = true
 	PlotWidth                        = 20 * vg.Inch
 	PlotHeight                       = 10 * vg.Inch
 	PlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
 	PlotSortedByLatencyFilename      = "plots_sorted_by_latency.png"
 	PlotInclMinMaxLabels             = true
+	PlotInclPercentileLines          = true
 	DataOutputFilename               = "data_output.txt"
 )
 
@@ -75,7 +78,10 @@ func NewRequestSender(buildReq BuildRequestFunc, parseRes ParseResponseFunc) Sen
 
 		res, err := c.Do(req)
 		if err != nil {
-			return errResult(err, res.StatusCode)
+			if res != nil {
+				return errResult(err, res.StatusCode)
+			}
+			return errResult(err, 0)
 		}
 
 		buf, err := io.ReadAll(res.Body)
@@ -94,37 +100,56 @@ func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logS
 	if round < 1 {
 		round = 1
 	}
-	round += 1 // for warmup
 
-	store := NewBenchmarkStore(concurrent * (round - 1))
+	store := NewBenchmarkStore(concurrent * round)
 	pool := util.NewAsyncPool(concurrent, concurrent)
 	aw := util.NewAwaitFutures[any](pool)
+	var warmupWg sync.WaitGroup // for warmup
+	warmupWg.Add(concurrent)
+
+	var startSet int32 = 0
+	var startTime time.Time
+	util.DebugPrintlnf(Debug, "Creating workers: %v", time.Now())
 
 	for i := 0; i < concurrent; i++ {
+		wi := i
 		aw.SubmitAsync(func() (any, error) {
 			client := newClient()
+			triggerOnce(client, store, sendReqFunc, false)
+			warmupWg.Done()
+			warmupWg.Wait() // synchronize all of them
+
+			if atomic.CompareAndSwapInt32(&startSet, 0, 1) {
+				startTime = time.Now()
+			}
+			util.DebugPrintlnf(Debug, "Worker-%d start ramping: %v", wi, time.Now())
+
 			for j := 0; j < round; j++ {
-				triggerOnce(client, store, sendReqFunc, j > 0)
+				triggerOnce(client, store, sendReqFunc, true)
 			}
 			return nil, nil
 		})
 	}
 	aw.Await()
+	endTime := time.Now()
+	util.DebugPrintlnf(Debug, "Benchmark endTime: %v", endTime)
 
-	stats := PrintStats(concurrent, round, store.bench, logStatFunc...)
+	stats := PrintStats(concurrent, round, store.bench, endTime.Sub(startTime), logStatFunc...)
 	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, p75: %v, p90: %v, p95: %v, p99: %v)",
 		len(store.bench), concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.P75.Took, stats.P90.Took, stats.P95.Took, stats.P99.Took)
-	util.Printlnf("\n--------- Plots ---------------\n")
 
-	SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
-	Plot(store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
-		"X - Sorted By Request Timestamp", PlotSortedByRequestOrderFilename, false)
-	util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
+	if GeneratePlots {
+		util.Printlnf("\n--------- Plots ---------------\n")
+		SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
+		Plot(store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
+			"X - Sorted By Request Timestamp", PlotSortedByRequestOrderFilename, false)
+		util.Printlnf("Generated plot graph: %v", PlotSortedByRequestOrderFilename)
 
-	SortTook(store.bench)
-	Plot(store.bench, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
-		"X - Sorted By Latency", PlotSortedByLatencyFilename, true)
-	util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
+		SortTook(store.bench)
+		Plot(store.bench, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
+			"X - Sorted By Latency", PlotSortedByLatencyFilename, true)
+		util.Printlnf("Generated plot graph: %v", PlotSortedByLatencyFilename)
+	}
 	util.Printlnf("\n-------------------------------\n")
 }
 
@@ -185,7 +210,7 @@ type Stats struct {
 	P75Index int
 }
 
-func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...LogExtraStatFunc) Stats {
+func PrintStats(concurrent int, round int, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) Stats {
 	var (
 		sum          time.Duration
 		stats        Stats
@@ -228,11 +253,13 @@ func PrintStats(concurrent int, round int, bench []Benchmark, logStatFunc ...Log
 	}
 
 	SortTook(bench)
-
+	totalReq := concurrent * round
 	util.Printlnf("\n--------- Brief ---------------\n")
-	util.Printlnf("total_requests: %v", concurrent*(round-1))
+	util.Printlnf("total_time: %v", totalTime)
+	util.Printlnf("total_requests: %v", totalReq)
+	util.Printlnf("throughput: %.0f req/sec", float64(totalReq)/(float64(totalTime)/float64(time.Second)))
 	util.Printlnf("concurrency: %v", concurrent)
-	util.Printlnf("round: %v", round-1)
+	util.Printlnf("round: %v", round)
 	util.Printlnf("status_count: %v", statusCount)
 	util.Printlnf("success_count: %v", successCount)
 	util.Printlnf("\n--------- Latency -------------\n")
@@ -291,7 +318,7 @@ func Plot(bench []Benchmark, stat Stats, title string, xlabel string, fname stri
 	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
 	util.Must(err)
 
-	if drawPercentile {
+	if PlotInclPercentileLines && drawPercentile {
 		drawPercentileLine(p, stat.P99Index, "P99", 1)
 		drawPercentileLine(p, stat.P95Index, "P95", 2)
 		drawPercentileLine(p, stat.P90Index, "P90", 3)
