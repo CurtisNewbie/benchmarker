@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/curtisnewbie/miso/util"
@@ -96,36 +95,63 @@ func NewRequestSender(buildReq BuildRequestFunc, parseRes ParseResponseFunc) Sen
 type SendRequestFunc func(c *http.Client) Result
 type LogExtraStatFunc func([]Benchmark) string
 
-func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logStatFunc ...LogExtraStatFunc) {
-	if round < 1 {
-		round = 1
+type BenchmarkSpec struct {
+	Concurrent  int
+	Round       int
+	Duration    time.Duration
+	SendReqFunc SendRequestFunc
+	LogStatFunc []LogExtraStatFunc
+}
+
+func StartBenchmark(spec BenchmarkSpec) {
+	durBased := false
+	if spec.Duration > 0 {
+		durBased = true
+	} else {
+		if spec.Round < 1 {
+			spec.Round = 1
+		}
 	}
 
-	store := NewBenchmarkStore(concurrent * round)
-	pool := util.NewAsyncPool(concurrent, concurrent)
-	aw := util.NewAwaitFutures[any](pool)
-	var warmupWg sync.WaitGroup // for warmup
-	warmupWg.Add(concurrent)
+	var storeSize int
+	if !durBased {
+		storeSize = spec.Concurrent * spec.Round
+	} else {
+		storeSize = spec.Concurrent * 10 // 10 is just a rough estimate
+	}
 
-	var startSet int32 = 0
+	store := NewBenchmarkStore(storeSize)
+	pool := util.NewAsyncPool(spec.Concurrent, spec.Concurrent)
+	aw := util.NewAwaitFutures[any](pool)
+
+	var warmupWg sync.WaitGroup // for warmup
+	warmupWg.Add(spec.Concurrent)
+
+	var startTimeOnce sync.Once
 	var startTime time.Time
 	util.DebugPrintlnf(Debug, "Creating workers: %v", time.Now())
 
-	for i := 0; i < concurrent; i++ {
+	for i := 0; i < spec.Concurrent; i++ {
 		wi := i
 		aw.SubmitAsync(func() (any, error) {
 			client := newClient()
-			triggerOnce(client, store, sendReqFunc, false)
-			warmupWg.Done()
+			func() {
+				defer warmupWg.Done()
+				triggerOnce(client, store, spec.SendReqFunc, false)
+			}()
 			warmupWg.Wait() // synchronize all of them
 
-			if atomic.CompareAndSwapInt32(&startSet, 0, 1) {
-				startTime = time.Now()
-			}
+			startTimeOnce.Do(func() { startTime = time.Now() })
 			util.DebugPrintlnf(Debug, "Worker-%d start ramping: %v", wi, time.Now())
 
-			for j := 0; j < round; j++ {
-				triggerOnce(client, store, sendReqFunc, true)
+			if durBased {
+				for time.Since(startTime) <= spec.Duration {
+					triggerOnce(client, store, spec.SendReqFunc, true)
+				}
+			} else {
+				for j := 0; j < spec.Round; j++ {
+					triggerOnce(client, store, spec.SendReqFunc, true)
+				}
 			}
 			return nil, nil
 		})
@@ -134,9 +160,9 @@ func StartBenchmark(concurrent int, round int, sendReqFunc SendRequestFunc, logS
 	endTime := time.Now()
 	util.DebugPrintlnf(Debug, "Benchmark endTime: %v", endTime)
 
-	stats := PrintStats(concurrent, round, store.bench, endTime.Sub(startTime), logStatFunc...)
+	stats := PrintStats(spec, store.bench, endTime.Sub(startTime), spec.LogStatFunc...)
 	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, p75: %v, p90: %v, p95: %v, p99: %v)",
-		len(store.bench), concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.P75.Took, stats.P90.Took, stats.P95.Took, stats.P99.Took)
+		len(store.bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.P75.Took, stats.P90.Took, stats.P95.Took, stats.P99.Took)
 
 	if GeneratePlots {
 		util.Printlnf("\n--------- Plots ---------------\n")
@@ -210,19 +236,25 @@ type Stats struct {
 	P75Index int
 }
 
-func PrintStats(concurrent int, round int, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) Stats {
+func PrintStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) Stats {
 	var (
+		concurrent   = spec.Concurrent
+		round        = spec.Round
+		dur          = spec.Duration
 		sum          time.Duration
 		stats        Stats
 		statusCount  = make(map[int]int, len(bench))
 		successCount = make(map[bool]int, len(bench))
+		total        = len(bench)
 	)
 
 	SortTook(bench) // sort by duration for calculating median
-	if len(bench)%2 == 0 {
-		stats.Med = (bench[len(bench)/2].Took + bench[len(bench)/2-1].Took) / 2
-	} else {
-		stats.Med = bench[len(bench)/2].Took
+	if total > 0 {
+		if total%2 == 0 {
+			stats.Med = (bench[total/2].Took + bench[total/2-1].Took) / 2
+		} else {
+			stats.Med = bench[total/2].Took
+		}
 	}
 
 	f, err := util.ReadWriteFile(DataOutputFilename)
@@ -244,7 +276,10 @@ func PrintStats(concurrent int, round int, bench []Benchmark, totalTime time.Dur
 		successCount[b.Success]++
 		sum += b.Took
 	}
-	stats.Avg = sum / time.Duration(len(bench))
+
+	if total > 0 {
+		stats.Avg = sum / time.Duration(total)
+	}
 
 	SortTimestamp(bench) // sort by request order for readability
 	for _, b := range bench {
@@ -253,13 +288,16 @@ func PrintStats(concurrent int, round int, bench []Benchmark, totalTime time.Dur
 	}
 
 	SortTook(bench)
-	totalReq := concurrent * round
 	util.Printlnf("\n--------- Brief ---------------\n")
 	util.Printlnf("total_time: %v", totalTime)
-	util.Printlnf("total_requests: %v", totalReq)
-	util.Printlnf("throughput: %.0f req/sec", float64(totalReq)/(float64(totalTime)/float64(time.Second)))
+	util.Printlnf("total_requests: %v", total)
+	util.Printlnf("throughput: %.0f req/sec", float64(total)/(float64(totalTime)/float64(time.Second)))
 	util.Printlnf("concurrency: %v", concurrent)
-	util.Printlnf("round: %v", round)
+	if dur > 0 {
+		util.Printlnf("duration: %v", dur)
+	} else {
+		util.Printlnf("rounds (for each worker): %v", round)
+	}
 	util.Printlnf("status_count: %v", statusCount)
 	util.Printlnf("success_count: %v", successCount)
 	util.Printlnf("\n--------- Latency -------------\n")
@@ -268,22 +306,26 @@ func PrintStats(concurrent int, round int, bench []Benchmark, totalTime time.Dur
 	util.Printlnf("median: %v", stats.Med)
 	util.Printlnf("avg: %v", stats.Avg)
 
-	p75, p75i := percentile(bench, 75)
-	p90, p90i := percentile(bench, 90)
-	p95, p95i := percentile(bench, 95)
-	p99, p99i := percentile(bench, 99)
-	stats.P75 = p75
-	stats.P90 = p90
-	stats.P95 = p95
-	stats.P99 = p99
-	stats.P75Index = p75i
-	stats.P90Index = p90i
-	stats.P95Index = p95i
-	stats.P99Index = p99i
-	util.Printlnf("p75: %v", p75.Took)
-	util.Printlnf("p90: %v", p90.Took)
-	util.Printlnf("p95: %v", p95.Took)
-	util.Printlnf("p99: %v", p99.Took)
+	if total > 0 {
+		p75, p75i := percentile(bench, 75)
+		p90, p90i := percentile(bench, 90)
+		p95, p95i := percentile(bench, 95)
+		p99, p99i := percentile(bench, 99)
+		stats.P75 = p75
+		stats.P90 = p90
+		stats.P95 = p95
+		stats.P99 = p99
+		stats.P75Index = p75i
+		stats.P90Index = p90i
+		stats.P95Index = p95i
+		stats.P99Index = p99i
+
+	}
+
+	util.Printlnf("p75: %v", stats.P75.Took)
+	util.Printlnf("p90: %v", stats.P90.Took)
+	util.Printlnf("p95: %v", stats.P95.Took)
+	util.Printlnf("p99: %v", stats.P99.Took)
 	util.Printlnf("\n--------- Data ----------------\n")
 	util.Printlnf("data file: %v", DataOutputFilename)
 
@@ -310,7 +352,7 @@ func Plot(bench []Benchmark, stat Stats, title string, xlabel string, fname stri
 	} else {
 		p.Y.Min = 0
 	}
-	p.Y.Max = float64(stat.Max.Milliseconds()) + 10
+	p.Y.Max = float64(stat.Max.Milliseconds()) + 1
 
 	data := ToXYs(bench)
 	util.DebugPrintlnf(Debug, "plot data: %+v", data)

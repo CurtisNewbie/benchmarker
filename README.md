@@ -16,63 +16,69 @@ func TestStartBenchmark(t *testing.T) {
 		})
 	concurrent := 3
 	round := 10
-	benchmarker.StartBenchmark(concurrent, round, sendRequest)
+	benchmarker.StartBenchmark(benchmarker.BenchmarkSpec{
+		Concurrent:  concurrent,
+		Round:       round,
+		SendReqFunc: sendRequest,
+	})
 }
 ```
 
 ## Output
 
 ```
-Timestamp: 1724315849189229, Took: 3.671291ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849192901, Took: 2.508584ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849193780, Took: 1.6275ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849193814, Took: 2.531166ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849195409, Took: 1.277083ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849195410, Took: 5.626291ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849196346, Took: 4.750209ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849196686, Took: 4.349958ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849201037, Took: 1.441166ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849201038, Took: 716.791µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849201096, Took: 1.389583ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849201755, Took: 1.171667ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849202479, Took: 2.215375ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849202486, Took: 888.375µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849202930, Took: 1.899708ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849203375, Took: 2.326917ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849204695, Took: 1.014625ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849204830, Took: 610.041µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849205440, Took: 1.134791ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849205703, Took: 924.459µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849205710, Took: 800.125µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849206511, Took: 582.792µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849206576, Took: 1.000708ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849206627, Took: 814µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849207094, Took: 1.107208ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849207442, Took: 628.75µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849207577, Took: 2.008667ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849208071, Took: 598.375µs, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849208202, Took: 1.131833ms, Success: true, HttpStatus: 200, Extra: map[]
-Timestamp: 1724315849208670, Took: 444µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471847895, Took: 689.375µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471847912, Took: 1.699167ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471847925, Took: 1.532291ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471848585, Took: 1.543875ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471849457, Took: 531.583µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471849612, Took: 1.028917ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471849989, Took: 790.208µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471850129, Took: 1.04575ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471850641, Took: 1.24525ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471850780, Took: 1.898375ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471851175, Took: 3.458209ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471851887, Took: 2.706709ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471852678, Took: 1.3715ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471854050, Took: 1.595041ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471854594, Took: 1.292333ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471854633, Took: 1.7755ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471855646, Took: 925µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471855886, Took: 440.833µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471856327, Took: 312.25µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471856409, Took: 660.333µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471856571, Took: 530.708µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471856640, Took: 711.042µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471857069, Took: 1.661875ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471857102, Took: 1.049875ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471857351, Took: 601.792µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471857953, Took: 746.542µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471858152, Took: 1.403916ms, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471858731, Took: 517.708µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471859249, Took: 710.042µs, Success: true, HttpStatus: 200, Extra: map[]
+Timestamp: 1724394471859959, Took: 480.625µs, Success: true, HttpStatus: 200, Extra: map[]
 
 
 --------- Brief ---------------
 
+total_time: 12.547042ms
 total_requests: 30
+throughput: 2391 req/sec
 concurrency: 3
-round: 10
+rounds (for each worker): 10
 status_count: map[200:30]
 success_count: map[true:30]
 
 --------- Latency -------------
 
-min: 444µs
-max: 5.626291ms
-median: 1.153229ms
-avg: 1.706401ms
-p75: 2.215375ms
-p90: 3.671291ms
-p95: 4.750209ms
-p99: 5.626291ms
+min: 312.25µs
+max: 3.458209ms
+median: 1.037333ms
+avg: 1.16522ms
+p75: 1.543875ms
+p90: 1.7755ms
+p95: 2.706709ms
+p99: 3.458209ms
 
 --------- Data ----------------
 
