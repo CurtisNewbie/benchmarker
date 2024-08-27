@@ -85,7 +85,7 @@ type BenchmarkSpec struct {
 	DataOutputFilename string
 }
 
-func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats) {
+func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	durBased := false
 	if spec.Duration > 0 {
 		durBased = true
@@ -158,25 +158,36 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats) {
 	endTime := time.Now()
 	util.DebugPrintlnf(spec.Debug, "Benchmark endTime: %v", endTime)
 
-	stats := printStats(spec, store.bench, endTime.Sub(startTime), spec.LogStatFunc...)
+	stats, err := printStats(spec, store.bench, endTime.Sub(startTime), spec.LogStatFunc...)
+	if err != nil {
+		return store.bench, stats, err
+	}
 	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v)",
 		len(store.bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med)
 
 	if !spec.DisablePlots {
 		util.Printlnf("\n--------- Plots ---------------\n")
 		SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
-		plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
+		err := plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
 			"X - Sorted By Request Timestamp", spec.PlotSortedByRequestOrderFilename, false)
+		if err != nil {
+			return store.bench, stats, err
+		}
+
 		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByRequestOrderFilename)
 
 		SortTook(store.bench)
-		plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
+		err = plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
 			"X - Sorted By Latency", spec.PlotSortedByLatencyFilename, true)
+		if err != nil {
+			return store.bench, stats, err
+		}
+
 		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByLatencyFilename)
 	}
 	util.Printlnf("\n-------------------------------\n")
 
-	return store.bench, stats
+	return store.bench, stats, nil
 }
 
 type Benchmark struct {
@@ -205,7 +216,7 @@ func SortTimestamp(bench []Benchmark) []Benchmark {
 
 type Percentile struct {
 	Record Benchmark
-	Index  int
+	Index  int // index of record when they are sorted by time duration.
 }
 
 type Stats struct {
@@ -216,7 +227,7 @@ type Stats struct {
 	Percentiles map[int]Percentile
 }
 
-func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) Stats {
+func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) (Stats, error) {
 	var (
 		concurrent   = spec.Concurrent
 		round        = spec.Round
@@ -239,7 +250,10 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 
 	f, err := util.ReadWriteFile(spec.DataOutputFilename)
 	_ = f.Truncate(0)
-	util.Must(err)
+	if err != nil {
+		return stats, err
+	}
+
 	for i, b := range bench {
 		if i == 0 {
 			stats.Min = b.Took
@@ -306,7 +320,7 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 			}
 		}
 	}
-	return stats
+	return stats, nil
 }
 
 func triggerOnce(client *http.Client, store *benchmarkStore, send SendRequestFunc, record bool) {
@@ -327,7 +341,7 @@ func triggerOnce(client *http.Client, store *benchmarkStore, send SendRequestFun
 	store.Add(bench)
 }
 
-func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, xlabel string, fname string, drawPercentile bool) {
+func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, xlabel string, fname string, drawPercentile bool) error {
 	p := plot.New()
 	p.Title.Text = "\n" + title
 	p.X.Label.Text = "\n" + xlabel + "\n"
@@ -340,7 +354,10 @@ func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, 
 	}
 	p.Y.Max = float64(stat.Max.Milliseconds()) + 1
 	data := toXYs(bench)
-	util.Must(plotutil.AddLinePoints(p, "Latency (ms)", data))
+	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
+	if err != nil {
+		return err
+	}
 
 	if !spec.DisablePlotInclPercentileLines && drawPercentile {
 		i := 1
@@ -367,8 +384,7 @@ func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, 
 			p.Add(bl)
 		}
 	}
-
-	util.Must(p.Save(spec.PlotWidth, spec.PlotHeight, fname))
+	return p.Save(spec.PlotWidth, spec.PlotHeight, fname)
 }
 
 func toXYs(bench []Benchmark) plotter.XYs {
