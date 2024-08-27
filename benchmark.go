@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -163,8 +164,21 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	if err != nil {
 		return store.bench, stats, err
 	}
-	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v)",
-		len(store.bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med)
+
+	percStr := strings.Builder{}
+	keys := util.MapKeys(stats.Percentiles)
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+
+	for _, pk := range keys {
+		pv := stats.Percentiles[pk]
+		if percStr.Len() > 0 {
+			percStr.WriteString(", ")
+		}
+		percStr.WriteString(fmt.Sprintf("P%d: %v", pk, pv.Record.Took))
+	}
+
+	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, %v)",
+		len(store.bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, percStr.String())
 
 	if !spec.DisablePlotGraphs {
 		util.Printlnf("\n--------- Plots ---------------\n")
@@ -317,7 +331,7 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 
 	stats.Percentiles = map[int]Percentile{}
 	if total > 0 {
-		for _, pv := range []int{60, 75, 90, 95, 99} {
+		for _, pv := range []int{75, 90, 95, 99} {
 			stats.Percentiles[pv] = percentile(bench, float64(pv))
 			util.Printlnf("P%d: %v", pv, stats.Percentiles[pv].Record.Took)
 		}
