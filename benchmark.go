@@ -23,7 +23,7 @@ var (
 	defPlotHeight                       = 10 * vg.Inch
 	defPlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
 	defPlotSortedByLatencyFilename      = "plots_sorted_by_latency.png"
-	defDataOutputFilename               = "data_output.txt"
+	defDataOutputFilename               = "benchmark_records.txt"
 )
 
 type BuildRequestFunc func() (*http.Request, error)
