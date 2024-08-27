@@ -82,7 +82,7 @@ p99: 3.458209ms
 
 --------- Data ----------------
 
-data file: data_output.txt
+data file: benchmark_records.txt
 
 --------- Plots ---------------
 
