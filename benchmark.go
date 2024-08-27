@@ -72,10 +72,11 @@ type BenchmarkSpec struct {
 	SendReqFunc SendRequestFunc
 	LogStatFunc []LogExtraStatFunc
 
-	Debug                          bool
-	DisablePlots                   bool
+	DebugLog                       bool
+	DisablePlotGraphs              bool
 	DisablePlotInclMinMaxLabels    bool
 	DisablePlotInclPercentileLines bool
+	DisableOutputFile              bool
 
 	PlotWidth                        font.Length
 	PlotHeight                       font.Length
@@ -127,7 +128,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 	var startTimeOnce sync.Once
 	var startTime time.Time
-	util.DebugPrintlnf(spec.Debug, "Creating workers: %v", time.Now())
+	util.DebugPrintlnf(spec.DebugLog, "Creating workers: %v", time.Now())
 
 	for i := 0; i < spec.Concurrent; i++ {
 		wi := i
@@ -140,7 +141,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 			warmupWg.Wait() // synchronize all of them
 
 			startTimeOnce.Do(func() { startTime = time.Now() })
-			util.DebugPrintlnf(spec.Debug, "Worker-%d start ramping: %v", wi, time.Now())
+			util.DebugPrintlnf(spec.DebugLog, "Worker-%d start ramping: %v", wi, time.Now())
 
 			if durBased {
 				for time.Since(startTime) <= spec.Duration {
@@ -156,7 +157,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	}
 	aw.Await()
 	endTime := time.Now()
-	util.DebugPrintlnf(spec.Debug, "Benchmark endTime: %v", endTime)
+	util.DebugPrintlnf(spec.DebugLog, "Benchmark endTime: %v", endTime)
 
 	stats, err := printStats(spec, store.bench, endTime.Sub(startTime), spec.LogStatFunc...)
 	if err != nil {
@@ -165,7 +166,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v)",
 		len(store.bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med)
 
-	if !spec.DisablePlots {
+	if !spec.DisablePlotGraphs {
 		util.Printlnf("\n--------- Plots ---------------\n")
 		SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
 		err := plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
@@ -220,11 +221,16 @@ type Percentile struct {
 }
 
 type Stats struct {
-	Min         time.Duration
-	Max         time.Duration
-	Avg         time.Duration
-	Med         time.Duration
-	Percentiles map[int]Percentile
+	TotalTime     time.Duration
+	TotalRequests int
+	Throughput    float64
+	StatusCount   map[int]int
+	SuccessCount  map[bool]int
+	Min           time.Duration
+	Max           time.Duration
+	Avg           time.Duration
+	Med           time.Duration
+	Percentiles   map[int]Percentile
 }
 
 func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) (Stats, error) {
@@ -246,12 +252,6 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		} else {
 			stats.Med = bench[total/2].Took
 		}
-	}
-
-	f, err := util.ReadWriteFile(spec.DataOutputFilename)
-	_ = f.Truncate(0)
-	if err != nil {
-		return stats, err
 	}
 
 	for i, b := range bench {
@@ -276,16 +276,29 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 	}
 
 	SortTimestamp(bench) // sort by request order for readability
-	for _, b := range bench {
-		f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp,
-			b.Took, b.Success, b.HttpStatus, b.Extra))
+
+	if !spec.DisableOutputFile {
+		f, err := util.ReadWriteFile(spec.DataOutputFilename)
+		if err != nil {
+			return stats, err
+		}
+		defer f.Close()
+		_ = f.Truncate(0)
+		for _, b := range bench {
+			f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp,
+				b.Took, b.Success, b.HttpStatus, b.Extra))
+		}
 	}
 
 	SortTook(bench)
 	util.Printlnf("\n--------- Brief ---------------\n")
 	util.Printlnf("total_time: %v", totalTime)
+	stats.TotalTime = totalTime
 	util.Printlnf("total_requests: %v", total)
-	util.Printlnf("throughput: %.0f req/sec", float64(total)/(float64(totalTime)/float64(time.Second)))
+	stats.TotalRequests = total
+	thrput := float64(total) / (float64(totalTime) / float64(time.Second))
+	util.Printlnf("throughput: %.0f req/sec", thrput)
+	stats.Throughput = thrput
 	util.Printlnf("concurrency: %v", concurrent)
 	if dur > 0 {
 		util.Printlnf("duration: %v", dur)
@@ -293,7 +306,9 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		util.Printlnf("rounds (for each worker): %v", round)
 	}
 	util.Printlnf("status_count: %v", statusCount)
+	stats.StatusCount = statusCount
 	util.Printlnf("success_count: %v", successCount)
+	stats.SuccessCount = successCount
 	util.Printlnf("\n--------- Latency -------------\n")
 	util.Printlnf("min: %v", stats.Min)
 	util.Printlnf("max: %v", stats.Max)
@@ -308,8 +323,10 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		}
 	}
 
-	util.Printlnf("\n--------- Data ----------------\n")
-	util.Printlnf("data file: %v", spec.DataOutputFilename)
+	if !spec.DisableOutputFile {
+		util.Printlnf("\n--------- Data ----------------\n")
+		util.Printlnf("data file: %v", spec.DataOutputFilename)
+	}
 
 	if len(logStatFunc) > 0 {
 		util.Printlnf("\n--------- Extra ---------------\n")
