@@ -344,8 +344,11 @@ func triggerOnce(client *http.Client, store *benchmarkStore, send SendRequestFun
 func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, xlabel string, fname string, drawPercentile bool) error {
 	p := plot.New()
 	p.Title.Text = "\n" + title
+	p.Title.Padding = 0.1 * vg.Inch
 	p.X.Label.Text = "\n" + xlabel + "\n"
+	p.X.Label.Padding = 0.1 * vg.Inch
 	p.Y.Label.Text = "\nRequest Latency (ms)\n"
+	p.Y.Label.Padding = 0.1 * vg.Inch
 	p.Y.Min = float64(stat.Min.Milliseconds())
 	if p.Y.Min > 10 {
 		p.Y.Min -= 10
