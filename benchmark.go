@@ -26,6 +26,10 @@ var (
 	defDataOutputFilename               = "benchmark_records.txt"
 )
 
+const (
+	workerQueueSize = 1000 // rough estimate
+)
+
 type BuildRequestFunc func() (*http.Request, error)
 type ParseResponseFunc func(buf []byte, statusCode int) Result
 
@@ -97,13 +101,6 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 		}
 	}
 
-	var storeSize int
-	if !durBased {
-		storeSize = spec.Concurrent * spec.Round
-	} else {
-		storeSize = spec.Concurrent * 10 // 10 is just a rough estimate
-	}
-
 	if spec.PlotWidth == 0 {
 		spec.PlotWidth = defPlotWidth
 	}
@@ -120,9 +117,8 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 		spec.DataOutputFilename = defDataOutputFilename
 	}
 
-	store := newBenchmarkStore(storeSize)
 	pool := util.NewAsyncPool(spec.Concurrent, spec.Concurrent)
-	aw := util.NewAwaitFutures[any](pool)
+	aw := util.NewAwaitFutures[[]Benchmark](pool)
 
 	var warmupWg sync.WaitGroup // for warmup
 	warmupWg.Add(spec.Concurrent)
@@ -133,36 +129,56 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 	for i := 0; i < spec.Concurrent; i++ {
 		wi := i
-		aw.SubmitAsync(func() (any, error) {
+		aw.SubmitAsync(func() ([]Benchmark, error) {
 			client := newClient()
 			func() {
 				defer warmupWg.Done()
-				triggerOnce(client, store, spec.SendReqFunc, false)
+				triggerOnce(client, spec.SendReqFunc)
 			}()
 			warmupWg.Wait() // synchronize all of them
 
 			startTimeOnce.Do(func() { startTime = time.Now() })
 			util.DebugPrintlnf(spec.DebugLog, "Worker-%d start ramping: %v", wi, time.Now())
 
+			var localStore []Benchmark
+			if durBased {
+				localStore = make([]Benchmark, 0, workerQueueSize)
+			} else {
+				localStore = make([]Benchmark, 0, spec.Round)
+			}
+
 			if durBased {
 				for time.Since(startTime) <= spec.Duration {
-					triggerOnce(client, store, spec.SendReqFunc, true)
+					localStore = append(localStore, triggerOnce(client, spec.SendReqFunc))
 				}
 			} else {
 				for j := 0; j < spec.Round; j++ {
-					triggerOnce(client, store, spec.SendReqFunc, true)
+					localStore = append(localStore, triggerOnce(client, spec.SendReqFunc))
 				}
 			}
-			return nil, nil
+			return localStore, nil
 		})
 	}
-	aw.Await()
+
+	var size int
+	if !durBased {
+		size = spec.Concurrent * spec.Round
+	} else {
+		size = spec.Concurrent * workerQueueSize
+	}
+	benchmarks := make([]Benchmark, 0, size)
+	futures := aw.Await()
+	for _, f := range futures {
+		b, _ := f.Get()
+		benchmarks = append(benchmarks, b...)
+	}
+
 	endTime := time.Now()
 	util.DebugPrintlnf(spec.DebugLog, "Benchmark endTime: %v", endTime)
 
-	stats, err := printStats(spec, store.bench, endTime.Sub(startTime), spec.LogStatFunc...)
+	stats, err := printStats(spec, benchmarks, endTime.Sub(startTime), spec.LogStatFunc...)
 	if err != nil {
-		return store.bench, stats, err
+		return benchmarks, stats, err
 	}
 
 	percStr := strings.Builder{}
@@ -178,31 +194,31 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	}
 
 	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, %v)",
-		len(store.bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, percStr.String())
+		len(benchmarks), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, percStr.String())
 
 	if !spec.DisablePlotGraphs {
 		util.Printlnf("\n--------- Plots ---------------\n")
-		SortTimestamp(store.bench) // already sorted by order in PrintStats(...)
-		err := plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
+		SortTimestamp(benchmarks) // already sorted by order in PrintStats(...)
+		err := plotGraph(spec, benchmarks, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
 			"X - Sorted By Request Timestamp", spec.PlotSortedByRequestOrderFilename, false)
 		if err != nil {
-			return store.bench, stats, err
+			return benchmarks, stats, err
 		}
 
 		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByRequestOrderFilename)
 
-		SortTook(store.bench)
-		err = plotGraph(spec, store.bench, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
+		SortTook(benchmarks)
+		err = plotGraph(spec, benchmarks, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
 			"X - Sorted By Latency", spec.PlotSortedByLatencyFilename, true)
 		if err != nil {
-			return store.bench, stats, err
+			return benchmarks, stats, err
 		}
 
 		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByLatencyFilename)
 	}
 	util.Printlnf("\n-------------------------------\n")
 
-	return store.bench, stats, nil
+	return benchmarks, stats, nil
 }
 
 type Benchmark struct {
@@ -354,14 +370,11 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 	return stats, nil
 }
 
-func triggerOnce(client *http.Client, store *benchmarkStore, send SendRequestFunc, record bool) {
+func triggerOnce(client *http.Client, send SendRequestFunc) Benchmark {
 	timestamp := time.Now().UnixMicro()
 	start := time.Now()
 	r := send(client)
 	took := time.Since(start)
-	if !record {
-		return // warmup only
-	}
 	bench := Benchmark{
 		Timestamp:  timestamp,
 		Took:       took,
@@ -369,7 +382,7 @@ func triggerOnce(client *http.Client, store *benchmarkStore, send SendRequestFun
 		Extra:      r.Extra,
 		HttpStatus: r.HttpStatus,
 	}
-	store.Add(bench)
+	return bench
 }
 
 func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, xlabel string, fname string, drawPercentile bool) error {
@@ -472,21 +485,4 @@ func newClient() *http.Client {
 		DisableKeepAlives: false,
 	}
 	return c
-}
-
-type benchmarkStore struct {
-	bench []Benchmark
-	mu    sync.Mutex
-}
-
-func (b *benchmarkStore) Add(bm Benchmark) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.bench = append(b.bench, bm)
-}
-
-func newBenchmarkStore(cnt int) *benchmarkStore {
-	return &benchmarkStore{
-		bench: make([]Benchmark, 0, cnt),
-	}
 }
