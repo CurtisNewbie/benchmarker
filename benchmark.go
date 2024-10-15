@@ -357,6 +357,7 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 				sl.Printlnf(output)
 			}
 		}
+		sl.WriteString("\n")
 	}
 	print(sl.String())
 

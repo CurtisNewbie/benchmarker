@@ -46,5 +46,10 @@ func TestStartBenchmarkDur(t *testing.T) {
 		SendReqFunc:       sendRequest,
 		DisablePlotGraphs: false,
 		DisableOutputFile: false,
+		LogStatFunc: []benchmarker.LogExtraStatFunc{
+			func([]benchmarker.Benchmark) string {
+				return "some extra stuff"
+			},
+		},
 	})
 }
