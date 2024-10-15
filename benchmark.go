@@ -1,6 +1,7 @@
 package benchmarker
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -305,8 +306,61 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		stats.Avg = sum / time.Duration(total)
 	}
 
-	SortTimestamp(bench) // sort by request order for readability
+	SortTook(bench)
+	stats.TotalTime = totalTime
+	stats.TotalRequests = total
+	stats.Throughput = float64(total) / (float64(totalTime) / float64(time.Second))
+	stats.StatusCount = statusCount
+	stats.SuccessCount = successCount
 
+	sl := util.SLPinter{}
+	sl.Printlnf("\nBenchmark Time: %v", util.Now().FormatClassicLocale())
+	sl.Printlnf("\n--------- Brief ---------------\n")
+	sl.Printlnf("total_time: %v", totalTime)
+	sl.Printlnf("total_requests: %v", total)
+	sl.Printlnf("throughput: %.0f req/sec", stats.Throughput)
+	sl.Printlnf("concurrency: %v", concurrent)
+	if dur > 0 {
+		sl.Printlnf("duration: %v", dur)
+	} else {
+		sl.Printlnf("rounds (for each worker): %v", round)
+	}
+	sl.Printlnf("status_count: %v", statusCount)
+	sl.Printlnf("success_count: %v", successCount)
+	sl.Printlnf("\n--------- Latency -------------\n")
+	sl.Printlnf("min: %v", stats.Min)
+	sl.Printlnf("max: %v", stats.Max)
+	sl.Printlnf("median: %v", stats.Med)
+	sl.Printlnf("avg: %v", stats.Avg)
+
+	stats.Percentiles = map[int]Percentile{}
+	if total > 0 {
+		for _, pv := range []int{75, 90, 95, 99} {
+			stats.Percentiles[pv] = percentile(bench, float64(pv))
+			sl.Printlnf("P%d: %v", pv, stats.Percentiles[pv].Record.Took)
+		}
+	}
+
+	if !spec.DisableOutputFile {
+		sl.Printlnf("\n--------- Data ----------------\n")
+		sl.Printlnf("data file: %v\n", spec.DataOutputFilename)
+	} else if len(logStatFunc) < 1 {
+		sl.WriteString("\n")
+	}
+
+	if len(logStatFunc) > 0 {
+		sl.Printlnf("\n--------- Extra ---------------\n")
+		for _, f := range logStatFunc {
+			output := f(bench)
+			if output != "" {
+				sl.Printlnf(output)
+			}
+		}
+	}
+	print(sl.String())
+
+	// sort by request order for readability in data output file
+	SortTimestamp(bench)
 	if !spec.DisableOutputFile {
 		f, err := util.ReadWriteFile(spec.DataOutputFilename)
 		if err != nil {
@@ -314,59 +368,15 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		}
 		defer f.Close()
 		_ = f.Truncate(0)
+
+		sl.Printlnf("-------------------------------\n\n")
+		f.WriteString(sl.String())
 		for _, b := range bench {
 			f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp,
 				b.Took, b.Success, b.HttpStatus, b.Extra))
 		}
 	}
 
-	SortTook(bench)
-	util.Printlnf("\n--------- Brief ---------------\n")
-	util.Printlnf("total_time: %v", totalTime)
-	stats.TotalTime = totalTime
-	util.Printlnf("total_requests: %v", total)
-	stats.TotalRequests = total
-	thrput := float64(total) / (float64(totalTime) / float64(time.Second))
-	util.Printlnf("throughput: %.0f req/sec", thrput)
-	stats.Throughput = thrput
-	util.Printlnf("concurrency: %v", concurrent)
-	if dur > 0 {
-		util.Printlnf("duration: %v", dur)
-	} else {
-		util.Printlnf("rounds (for each worker): %v", round)
-	}
-	util.Printlnf("status_count: %v", statusCount)
-	stats.StatusCount = statusCount
-	util.Printlnf("success_count: %v", successCount)
-	stats.SuccessCount = successCount
-	util.Printlnf("\n--------- Latency -------------\n")
-	util.Printlnf("min: %v", stats.Min)
-	util.Printlnf("max: %v", stats.Max)
-	util.Printlnf("median: %v", stats.Med)
-	util.Printlnf("avg: %v", stats.Avg)
-
-	stats.Percentiles = map[int]Percentile{}
-	if total > 0 {
-		for _, pv := range []int{75, 90, 95, 99} {
-			stats.Percentiles[pv] = percentile(bench, float64(pv))
-			util.Printlnf("P%d: %v", pv, stats.Percentiles[pv].Record.Took)
-		}
-	}
-
-	if !spec.DisableOutputFile {
-		util.Printlnf("\n--------- Data ----------------\n")
-		util.Printlnf("data file: %v", spec.DataOutputFilename)
-	}
-
-	if len(logStatFunc) > 0 {
-		util.Printlnf("\n--------- Extra ---------------\n")
-		for _, f := range logStatFunc {
-			output := f(bench)
-			if output != "" {
-				util.Printlnf(output)
-			}
-		}
-	}
 	return stats, nil
 }
 
@@ -485,4 +495,20 @@ func newClient() *http.Client {
 		DisableKeepAlives: false,
 	}
 	return c
+}
+
+var (
+	debug    = flag.Bool("debug", false, "Enable debug log")
+	conc     = flag.Int("conc", 1, "Concurrency")
+	round    = flag.Int("round", 2, "Round")
+	duration = flag.Duration("dur", 0, "Duration")
+)
+
+func StartBenchmarkCli(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
+	flag.Parse()
+	spec.Concurrent = *conc
+	spec.Round = *round
+	spec.Duration = *duration
+	spec.DebugLog = *debug
+	return StartBenchmark(spec)
 }
