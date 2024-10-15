@@ -27,7 +27,7 @@ var (
 	defDataOutputFilename               = "benchmark_records.txt"
 )
 
-const (
+var (
 	// rough estimate on how many benchmark results will be created by one goroutine, increase it if necessary.
 	ResultQueueSize = 1000
 )
