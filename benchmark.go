@@ -28,7 +28,8 @@ var (
 )
 
 const (
-	workerQueueSize = 1000 // rough estimate
+	// rough estimate on how many benchmark results will be created by one goroutine, increase it if necessary.
+	ResultQueueSize = 1000
 )
 
 type BuildRequestFunc func() (*http.Request, error)
@@ -143,7 +144,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 			var localStore []Benchmark
 			if durBased {
-				localStore = make([]Benchmark, 0, workerQueueSize)
+				localStore = make([]Benchmark, 0, ResultQueueSize)
 			} else {
 				localStore = make([]Benchmark, 0, spec.Round)
 			}
@@ -165,7 +166,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	if !durBased {
 		size = spec.Concurrent * spec.Round
 	} else {
-		size = spec.Concurrent * workerQueueSize
+		size = spec.Concurrent * ResultQueueSize
 	}
 	benchmarks := make([]Benchmark, 0, size)
 	futures := aw.Await()
