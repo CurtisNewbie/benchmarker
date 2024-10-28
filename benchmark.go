@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/curtisnewbie/miso/util"
+	"github.com/spf13/cast"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/font"
 	"gonum.org/v1/plot/plotter"
@@ -500,17 +501,70 @@ func newClient() *http.Client {
 }
 
 var (
-	debug    = flag.Bool("debug", false, "Enable debug log")
-	conc     = flag.Int("conc", 1, "Concurrency")
-	round    = flag.Int("round", 2, "Round")
-	duration = flag.Duration("dur", 0, "Duration")
+	debug     = flag.Bool("debug", false, "Enable debug log")
+	conc      = flag.Int("conc", 1, "Concurrency")
+	concGroup = flag.String("concgroup", "Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)", "")
+	round     = flag.Int("round", 2, "Round")
+	duration  = flag.Duration("dur", 0, "Duration")
 )
 
-func StartBenchmarkCli(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
+type CliBenchmarkResult struct {
+	Benchmarks []Benchmark
+	Stats      Stats
+}
+
+func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 	flag.Parse()
 	spec.Concurrent = *conc
 	spec.Round = *round
 	spec.Duration = *duration
 	spec.DebugLog = *debug
-	return StartBenchmark(spec)
+
+	if util.IsBlankStr(*concGroup) {
+		res := make([]CliBenchmarkResult, 1)
+		b, s, err := StartBenchmark(spec)
+		res = append(res, CliBenchmarkResult{
+			Benchmarks: b,
+			Stats:      s,
+		})
+		return res, err
+	}
+
+	tok := strings.Split(*concGroup, ",")
+
+	if spec.PlotSortedByRequestOrderFilename == "" {
+		spec.PlotSortedByRequestOrderFilename = defPlotSortedByRequestOrderFilename
+	}
+	if spec.PlotSortedByLatencyFilename == "" {
+		spec.PlotSortedByLatencyFilename = defPlotSortedByLatencyFilename
+	}
+	if spec.DataOutputFilename == "" {
+		spec.DataOutputFilename = defDataOutputFilename
+	}
+
+	res := make([]CliBenchmarkResult, len(*concGroup))
+	for i, t := range tok {
+		if util.IsBlankStr(t) {
+			continue
+		}
+		c := cast.ToInt(t)
+		if c < 1 {
+			continue
+		}
+		cp := spec        // this is a value copy
+		cp.Concurrent = c // change concurrency value
+		cp.PlotSortedByRequestOrderFilename += "_" + cast.ToString(i)
+		cp.PlotSortedByLatencyFilename += "_" + cast.ToString(i)
+		cp.DataOutputFilename += "_" + cast.ToString(i)
+
+		b, s, err := StartBenchmark(cp)
+		res = append(res, CliBenchmarkResult{
+			Benchmarks: b,
+			Stats:      s,
+		})
+		if err != nil {
+			return res, err
+		}
+	}
+	return res, nil
 }
