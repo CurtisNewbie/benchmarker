@@ -553,9 +553,9 @@ func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 		}
 		cp := spec        // this is a value copy
 		cp.Concurrent = c // change concurrency value
-		cp.PlotSortedByRequestOrderFilename += "_" + cast.ToString(i)
-		cp.PlotSortedByLatencyFilename += "_" + cast.ToString(i)
-		cp.DataOutputFilename += "_" + cast.ToString(i)
+		cp.PlotSortedByRequestOrderFilename = "conc" + cast.ToString(i) + "_" + cp.PlotSortedByRequestOrderFilename
+		cp.PlotSortedByLatencyFilename = "conc" + cast.ToString(i) + "_" + cp.PlotSortedByLatencyFilename
+		cp.DataOutputFilename = "conc" + cast.ToString(i) + "_" + cp.DataOutputFilename
 
 		b, s, err := StartBenchmark(cp)
 		res = append(res, CliBenchmarkResult{
