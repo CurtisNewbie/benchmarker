@@ -543,7 +543,7 @@ func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 	}
 
 	res := make([]CliBenchmarkResult, len(*concGroup))
-	for i, t := range tok {
+	for _, t := range tok {
 		if util.IsBlankStr(t) {
 			continue
 		}
@@ -553,9 +553,10 @@ func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 		}
 		cp := spec        // this is a value copy
 		cp.Concurrent = c // change concurrency value
-		cp.PlotSortedByRequestOrderFilename = "conc" + cast.ToString(i) + "_" + cp.PlotSortedByRequestOrderFilename
-		cp.PlotSortedByLatencyFilename = "conc" + cast.ToString(i) + "_" + cp.PlotSortedByLatencyFilename
-		cp.DataOutputFilename = "conc" + cast.ToString(i) + "_" + cp.DataOutputFilename
+		cs := cast.ToString(c)
+		cp.PlotSortedByRequestOrderFilename = "conc" + cs + "_" + cp.PlotSortedByRequestOrderFilename
+		cp.PlotSortedByLatencyFilename = "conc" + cs + "_" + cp.PlotSortedByLatencyFilename
+		cp.DataOutputFilename = "conc" + cs + "_" + cp.DataOutputFilename
 
 		b, s, err := StartBenchmark(cp)
 		res = append(res, CliBenchmarkResult{
