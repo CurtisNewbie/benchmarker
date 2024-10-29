@@ -347,7 +347,7 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		sl.Printlnf("\n--------- Data ----------------\n")
 		sl.Printlnf("data file: %v", spec.DataOutputFilename)
 	} else if len(logStatFunc) < 1 {
-		sl.WriteString("\n")
+		sl.WriteString("\n\n")
 	}
 
 	if len(logStatFunc) > 0 {
