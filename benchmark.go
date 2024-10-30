@@ -504,7 +504,7 @@ func newClient() *http.Client {
 var (
 	debug     = flag.Bool("debug", false, "Enable debug log")
 	conc      = flag.Int("conc", 1, "Concurrency")
-	concGroup = flag.String("concgroup", "Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)", "")
+	concGroup = flag.String("concgroup", "", "Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)")
 	round     = flag.Int("round", 2, "Round")
 	duration  = flag.Duration("dur", 0, "Duration")
 )
