@@ -24,6 +24,33 @@ func TestStartBenchmark(t *testing.T) {
 }
 ```
 
+If you need CLI support:
+
+```golang
+func main() {
+	sendRequest := benchmarker.NewRequestSender(
+		func() (*http.Request, error) {
+			return http.NewRequest(http.MethodGet, "http://localhost:80", nil)
+		},
+		func(buf []byte, statusCode int) benchmarker.Result {
+			return benchmarker.Result{
+				HttpStatus: statusCode,
+				Success:    statusCode == 200,
+			}
+		})
+	benchmarker.StartBenchmarkCli(benchmarker.BenchmarkSpec{
+		SendReqFunc: sendRequest,
+	})
+}
+```
+
+Then run it as follows:
+
+```sh
+# concurrency 3, duration 10 seconds
+go run main.go -dur 10s -conc 3
+```
+
 ## Output
 
 ```
