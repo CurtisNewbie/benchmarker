@@ -11,7 +11,7 @@ import (
 func TestStartBenchmark(t *testing.T) {
 	sendRequest := benchmarker.NewRequestSender(
 		func() (*http.Request, error) {
-			return http.NewRequest(http.MethodGet, "http://localhost:80", nil)
+			return http.NewRequest(http.MethodGet, "http://localhost:8080", nil)
 		},
 		func(buf []byte, statusCode int) benchmarker.Result {
 			return benchmarker.Result{
@@ -42,7 +42,7 @@ func TestStartBenchmarkDur(t *testing.T) {
 	concurrent := 100
 	_, _, _ = benchmarker.StartBenchmark(benchmarker.BenchmarkSpec{
 		Concurrent:        concurrent,
-		Duration:          time.Second * 1,
+		Duration:          time.Second * 5,
 		SendReqFunc:       sendRequest,
 		DisablePlotGraphs: false,
 		DisableOutputFile: false,

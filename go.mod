@@ -4,6 +4,7 @@ go 1.22.3
 
 require (
 	github.com/curtisnewbie/miso v0.1.5-beta.3
+	github.com/spf13/cast v1.6.0
 	gonum.org/v1/plot v0.14.0
 )
 
@@ -16,7 +17,6 @@ require (
 	github.com/go-pdf/fpdf v0.8.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/spf13/cast v1.6.0 // indirect
 	golang.org/x/image v0.11.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 )

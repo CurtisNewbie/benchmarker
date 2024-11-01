@@ -21,10 +21,11 @@ import (
 )
 
 var (
-	defPlotWidth                        = 20 * vg.Inch
-	defPlotHeight                       = 10 * vg.Inch
-	defPlotSortedByRequestOrderFilename = "plots_sorted_by_request_order.png"
-	defPlotSortedByLatencyFilename      = "plots_sorted_by_latency.png"
+	defPlotWidth                        = 30 * vg.Inch
+	defPlotHeight                       = 15 * vg.Inch
+	defPlotSortedByRequestOrderFilename = "plot_sorted_by_request_order.png"
+	defPlotSortedByLatencyFilename      = "plot_sorted_by_latency.png"
+	defPlotSuccessRateFilename          = "plot_success_rate.png"
 	defDataOutputFilename               = "benchmark_records.txt"
 )
 
@@ -90,8 +91,10 @@ type BenchmarkSpec struct {
 	PlotHeight                       font.Length
 	PlotSortedByRequestOrderFilename string
 	PlotSortedByLatencyFilename      string
+	PlotSuccessRateFilename          string
+	DataOutputFilename               string
 
-	DataOutputFilename string
+	benchmarkTime string
 }
 
 func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
@@ -116,9 +119,13 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	if spec.PlotSortedByLatencyFilename == "" {
 		spec.PlotSortedByLatencyFilename = defPlotSortedByLatencyFilename
 	}
+	if spec.PlotSuccessRateFilename == "" {
+		spec.PlotSuccessRateFilename = defPlotSuccessRateFilename
+	}
 	if spec.DataOutputFilename == "" {
 		spec.DataOutputFilename = defDataOutputFilename
 	}
+	spec.benchmarkTime = util.Now().FormatClassicLocale()
 
 	pool := util.NewAsyncPool(spec.Concurrent, spec.Concurrent)
 	aw := util.NewAwaitFutures[[]Benchmark](pool)
@@ -129,6 +136,24 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	var startTimeOnce sync.Once
 	var startTime time.Time
 	util.DebugPrintlnf(spec.DebugLog, "Creating workers: %v", time.Now())
+
+	var cmu sync.Mutex
+	var successCount int64 = 0
+	var failCount int64 = 0
+
+	updateCount := func(success bool) float64 {
+		cmu.Lock()
+		if success {
+			successCount += 1
+		} else {
+			failCount += 1
+		}
+		s := successCount
+		f := failCount
+		cmu.Unlock()
+
+		return float64(s) / float64(s+f)
+	}
 
 	for i := 0; i < spec.Concurrent; i++ {
 		wi := i
@@ -152,11 +177,15 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 			if durBased {
 				for time.Since(startTime) <= spec.Duration {
-					localStore = append(localStore, triggerOnce(client, spec.SendReqFunc))
+					b := triggerOnce(client, spec.SendReqFunc)
+					b.successRate = updateCount(b.Success)
+					localStore = append(localStore, b)
 				}
 			} else {
 				for j := 0; j < spec.Round; j++ {
-					localStore = append(localStore, triggerOnce(client, spec.SendReqFunc))
+					b := triggerOnce(client, spec.SendReqFunc)
+					b.successRate = updateCount(b.Success)
+					localStore = append(localStore, b)
 				}
 			}
 			return localStore, nil
@@ -201,22 +230,27 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 	if !spec.DisablePlotGraphs {
 		util.Printlnf("\n--------- Plots ---------------\n")
-		SortTimestamp(benchmarks) // already sorted by order in PrintStats(...)
-		err := plotGraph(spec, benchmarks, stats, "Request Latency Plots - Sorted By Request Timestamp "+titleStats,
+		SortTimestamp(benchmarks)
+		err := plotGraph(spec, benchmarks, stats, spec.benchmarkTime+" - Request Latency Plot "+titleStats,
 			"X - Sorted By Request Timestamp", spec.PlotSortedByRequestOrderFilename, false)
 		if err != nil {
 			return benchmarks, stats, err
 		}
-
 		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByRequestOrderFilename)
 
+		err = plotSuccessRateGraph(spec, benchmarks, spec.benchmarkTime+" - Success Rate Plot "+titleStats,
+			"X - Sorted By Request Timestamp", spec.PlotSuccessRateFilename)
+		if err != nil {
+			return benchmarks, stats, err
+		}
+		util.Printlnf("Generated plot graph: %v", spec.PlotSuccessRateFilename)
+
 		SortTook(benchmarks)
-		err = plotGraph(spec, benchmarks, stats, "Request Latency Plots - Sorted By Latency "+titleStats,
+		err = plotGraph(spec, benchmarks, stats, spec.benchmarkTime+" - Latency Percentile Plot "+titleStats,
 			"X - Sorted By Latency", spec.PlotSortedByLatencyFilename, true)
 		if err != nil {
 			return benchmarks, stats, err
 		}
-
 		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByLatencyFilename)
 	}
 	util.Printlnf("\n-------------------------------\n")
@@ -225,11 +259,12 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 }
 
 type Benchmark struct {
-	Timestamp  int64
-	Took       time.Duration
-	Success    bool
-	Extra      map[string]any
-	HttpStatus int
+	Timestamp   int64
+	Took        time.Duration
+	Success     bool
+	Extra       map[string]any
+	HttpStatus  int
+	successRate float64
 }
 
 type Result struct {
@@ -316,7 +351,7 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 	stats.SuccessCount = successCount
 
 	sl := util.SLPinter{}
-	sl.Printlnf("\nBenchmark Time: %v", util.Now().FormatClassicLocale())
+	sl.Printlnf("\nBenchmark Time: %v", spec.benchmarkTime)
 	sl.Printlnf("\n--------- Brief ---------------\n")
 	sl.Printlnf("total_time: %v", totalTime)
 	sl.Printlnf("total_requests: %v", total)
@@ -376,8 +411,8 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 		sl.Printlnf("-------------------------------\n\n")
 		f.WriteString(sl.String())
 		for _, b := range bench {
-			f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v, HttpStatus: %d, Extra: %+v\n", b.Timestamp,
-				b.Took, b.Success, b.HttpStatus, b.Extra))
+			f.WriteString(fmt.Sprintf("Timestamp: %d, Took: %v, Success: %v (%.2f%%), HttpStatus: %d, Extra: %+v\n", b.Timestamp,
+				b.Took, b.Success, b.successRate*100, b.HttpStatus, b.Extra))
 		}
 	}
 
@@ -403,6 +438,7 @@ func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, 
 	p := plot.New()
 	p.Title.Text = "\n" + title
 	p.Title.Padding = 0.1 * vg.Inch
+	p.X.Max = float64(len(bench) + 1)
 	p.X.Label.Text = "\n" + xlabel + "\n"
 	p.X.Label.Padding = 0.1 * vg.Inch
 	p.Y.Label.Text = "\nRequest Latency (ms)\n"
@@ -415,7 +451,7 @@ func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, 
 	}
 	p.Y.Max = float64(stat.Max.Milliseconds()) + 1
 	data := toXYs(bench)
-	err := plotutil.AddLinePoints(p, "Latency (ms)", data)
+	err := plotutil.AddLinePoints(p, data)
 	if err != nil {
 		return err
 	}
@@ -448,12 +484,39 @@ func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, 
 	return p.Save(spec.PlotWidth, spec.PlotHeight, fname)
 }
 
+func plotSuccessRateGraph(spec BenchmarkSpec, bench []Benchmark, title string, xlabel string, fname string) error {
+	p := plot.New()
+	p.Title.Text = "\n" + title
+	p.Title.Padding = 0.1 * vg.Inch
+	p.X.Label.Text = "\n" + xlabel + "\n"
+	p.X.Label.Padding = 0.1 * vg.Inch
+	p.Y.Label.Text = "\nSuccess Rate (%)\n"
+	p.Y.Label.Padding = 0.1 * vg.Inch
+	p.X.Max = float64(len(bench) + 1)
+	p.Y.Min = 0
+	p.Y.Max = 101
+
+	drawSuccessRateLine(p, toSuccessRateXYs(bench), 1)
+	return p.Save(spec.PlotWidth, spec.PlotHeight, fname)
+}
+
 func toXYs(bench []Benchmark) plotter.XYs {
 	pts := make(plotter.XYs, 0, len(bench))
 	for i := range bench {
 		pts = append(pts, plotter.XY{
 			X: float64(i),
 			Y: float64(bench[i].Took.Milliseconds()),
+		})
+	}
+	return pts
+}
+
+func toSuccessRateXYs(bench []Benchmark) plotter.XYs {
+	pts := make(plotter.XYs, 0, len(bench))
+	for i := range bench {
+		pts = append(pts, plotter.XY{
+			X: float64(i),
+			Y: cast.ToFloat64(fmt.Sprintf("%.2f", bench[i].successRate*100)),
 		})
 	}
 	return pts
@@ -488,6 +551,53 @@ func drawPercentileLine(p *plot.Plot, index int, label string, color int) {
 		}
 	} else {
 		util.Printlnf("failed to add percentile line, %v", err)
+	}
+}
+
+func drawSuccessRateLine(p *plot.Plot, dat plotter.XYs, color int) {
+
+	// find min, max
+	var min, max float64 = math.MaxFloat64, 0
+	var mini, maxi int
+	for i, xy := range dat {
+		if xy.Y < min {
+			mini = i
+			min = xy.Y
+		}
+		if xy.Y >= max {
+			maxi = i
+			max = xy.Y
+		}
+	}
+
+	line, err := plotter.NewLine(dat)
+	if err == nil {
+		line.LineStyle.Color = plotutil.Color(color)
+		p.Add(line)
+
+		if lineLabels, err := plotter.NewLabels(plotter.XYLabels{
+			XYs:    []plotter.XY{{X: float64(mini), Y: min + 1}},
+			Labels: []string{cast.ToString(min) + "%"},
+		}); err == nil {
+			p.Add(lineLabels)
+		}
+
+		if lineLabels, err := plotter.NewLabels(plotter.XYLabels{
+			XYs:    []plotter.XY{{X: float64(maxi), Y: max + 1}},
+			Labels: []string{cast.ToString(max) + "%"},
+		}); err == nil {
+			p.Add(lineLabels)
+		}
+
+		if lineLabels, err := plotter.NewLabels(plotter.XYLabels{
+			XYs:    []plotter.XY{{X: float64(1), Y: dat[0].Y + 1}},
+			Labels: []string{"Success Rate (%)"},
+		}); err == nil {
+			p.Add(lineLabels)
+		}
+
+	} else {
+		util.Printlnf("failed to draw success rate line, %v", err)
 	}
 }
 
@@ -557,6 +667,7 @@ func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 		cs := cast.ToString(c)
 		cp.PlotSortedByRequestOrderFilename = "conc" + cs + "_" + cp.PlotSortedByRequestOrderFilename
 		cp.PlotSortedByLatencyFilename = "conc" + cs + "_" + cp.PlotSortedByLatencyFilename
+		cp.PlotSuccessRateFilename = "conc" + cs + "_" + cp.PlotSuccessRateFilename
 		cp.DataOutputFilename = "conc" + cs + "_" + cp.DataOutputFilename
 
 		b, s, err := StartBenchmark(cp)
