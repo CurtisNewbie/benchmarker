@@ -649,6 +649,9 @@ func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 	if spec.PlotSortedByLatencyFilename == "" {
 		spec.PlotSortedByLatencyFilename = defPlotSortedByLatencyFilename
 	}
+	if spec.PlotSuccessRateFilename == "" {
+		spec.PlotSuccessRateFilename = defPlotSuccessRateFilename
+	}
 	if spec.DataOutputFilename == "" {
 		spec.DataOutputFilename = defDataOutputFilename
 	}
