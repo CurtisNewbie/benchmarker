@@ -34,3 +34,14 @@ func TestStartBenchmarkDur(t *testing.T) {
 		},
 	})
 }
+
+func TestStartBenchmarkCli(t *testing.T) {
+	_, err := benchmarker.StartBenchmarkCli(benchmarker.BenchmarkSpec{
+		BuildReqFunc: func() (*http.Request, error) {
+			return http.NewRequest(http.MethodGet, "http://localhost:8080", nil)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+}
