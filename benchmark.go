@@ -30,9 +30,9 @@ var (
 	defDataOutputFilename               = "benchmark_records.txt"
 )
 
-var (
+const (
 	// rough estimate on how many benchmark results will be created by one goroutine, increase it if necessary.
-	ResultQueueSize = 1000
+	DefaultResultQueueSize = 1000
 )
 
 type BuildRequestFunc func() (*http.Request, error)
@@ -82,6 +82,9 @@ type BenchmarkSpec struct {
 	SendReqFunc SendRequestFunc
 	LogStatFunc []LogExtraStatFunc
 
+	// rough estimate on how many benchmark results will be created by one worker, by default 1000.
+	SingleWorkerResultQueueSize int
+
 	DebugLog                       bool
 	DisablePlotGraphs              bool
 	DisablePlotInclMinMaxLabels    bool
@@ -100,6 +103,10 @@ type BenchmarkSpec struct {
 
 func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	durBased := false
+	if spec.SingleWorkerResultQueueSize < 1 {
+		spec.SingleWorkerResultQueueSize = DefaultResultQueueSize
+	}
+
 	if spec.Duration > 0 {
 		durBased = true
 	} else {
@@ -171,7 +178,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 			var localStore []Benchmark
 			if durBased {
-				localStore = make([]Benchmark, 0, ResultQueueSize)
+				localStore = make([]Benchmark, 0, spec.SingleWorkerResultQueueSize)
 			} else {
 				localStore = make([]Benchmark, 0, spec.Round)
 			}
@@ -197,7 +204,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	if !durBased {
 		size = spec.Concurrent * spec.Round
 	} else {
-		size = spec.Concurrent * ResultQueueSize
+		size = spec.Concurrent * spec.SingleWorkerResultQueueSize
 	}
 	benchmarks := make([]Benchmark, 0, size)
 	futures := aw.Await()
