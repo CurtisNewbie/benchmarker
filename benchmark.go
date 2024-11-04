@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -213,45 +214,26 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 		return benchmarks, stats, err
 	}
 
-	percStr := strings.Builder{}
-	keys := util.MapKeys(stats.Percentiles)
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-
-	for _, pk := range keys {
-		pv := stats.Percentiles[pk]
-		if percStr.Len() > 0 {
-			percStr.WriteString(", ")
-		}
-		percStr.WriteString(fmt.Sprintf("P%d: %v", pk, pv.Record.Took))
-	}
-
-	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, %v)",
-		len(benchmarks), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, percStr.String())
-
 	if !spec.DisablePlotGraphs {
 		util.Printlnf("\n--------- Plots ---------------\n")
-		SortTimestamp(benchmarks)
-		err := plotGraph(spec, benchmarks, stats, spec.benchmarkTime+" - Request Latency Plot "+titleStats,
-			"X - Sorted By Request Timestamp", spec.PlotSortedByRequestOrderFilename, false)
-		if err != nil {
-			return benchmarks, stats, err
-		}
-		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByRequestOrderFilename)
 
-		err = plotSuccessRateGraph(spec, benchmarks, spec.benchmarkTime+" - Success Rate Plot "+titleStats,
-			"X - Sorted By Request Timestamp", spec.PlotSuccessRateFilename)
-		if err != nil {
-			return benchmarks, stats, err
-		}
-		util.Printlnf("Generated plot graph: %v", spec.PlotSuccessRateFilename)
+		sortedByTimestamp := SortTimestamp(benchmarks)
+		sortedByTook := SortTook(slices.Clone(benchmarks))
 
-		SortTook(benchmarks)
-		err = plotGraph(spec, benchmarks, stats, spec.benchmarkTime+" - Latency Percentile Plot "+titleStats,
-			"X - Sorted By Latency", spec.PlotSortedByLatencyFilename, true)
+		futures := util.NewAwaitFutures[any](nil)
+		futures.SubmitAsync(func() (any, error) {
+			return nil, plotLatencyGraph(spec, sortedByTimestamp, stats)
+		})
+		futures.SubmitAsync(func() (any, error) {
+			return nil, plotSuccessRateGraph(spec, sortedByTimestamp, stats)
+		})
+		futures.SubmitAsync(func() (any, error) {
+			return nil, plotPercentileGraph(spec, sortedByTook, stats)
+		})
+		err := futures.AwaitAnyErr()
 		if err != nil {
-			return benchmarks, stats, err
+			return sortedByTimestamp, stats, err
 		}
-		util.Printlnf("Generated plot graph: %v", spec.PlotSortedByLatencyFilename)
 	}
 	util.Printlnf("\n-------------------------------\n")
 
@@ -299,6 +281,21 @@ type Stats struct {
 	Avg           time.Duration
 	Med           time.Duration
 	Percentiles   map[int]Percentile
+}
+
+func (s *Stats) PercentileString() string {
+	percStr := strings.Builder{}
+	keys := util.MapKeys(s.Percentiles)
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+
+	for _, pk := range keys {
+		pv := s.Percentiles[pk]
+		if percStr.Len() > 0 {
+			percStr.WriteString(", ")
+		}
+		percStr.WriteString(fmt.Sprintf("P%d: %v", pk, pv.Record.Took))
+	}
+	return percStr.String()
 }
 
 func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, logStatFunc ...LogExtraStatFunc) (Stats, error) {
@@ -484,7 +481,40 @@ func plotGraph(spec BenchmarkSpec, bench []Benchmark, stat Stats, title string, 
 	return p.Save(spec.PlotWidth, spec.PlotHeight, fname)
 }
 
-func plotSuccessRateGraph(spec BenchmarkSpec, bench []Benchmark, title string, xlabel string, fname string) error {
+func plotPercentileGraph(spec BenchmarkSpec, bench []Benchmark, stats Stats) error {
+	// SortTook(bench)
+	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, %v)",
+		len(bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.PercentileString())
+	err := plotGraph(spec, bench, stats, spec.benchmarkTime+" - Latency Percentile Plot "+titleStats,
+		"X - Sorted By Latency", spec.PlotSortedByLatencyFilename, true)
+	if err != nil {
+		return err
+	}
+	util.Printlnf("Generated plot graph: %v", spec.PlotSortedByRequestOrderFilename)
+	return nil
+}
+
+func plotLatencyGraph(spec BenchmarkSpec, bench []Benchmark, stats Stats) error {
+	// SortTimestamp(bench)
+	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, %v)",
+		len(bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.PercentileString())
+	err := plotGraph(spec, bench, stats, spec.benchmarkTime+" - Request Latency Plot "+titleStats,
+		"X - Sorted By Request Timestamp", spec.PlotSortedByRequestOrderFilename, false)
+	if err != nil {
+		return err
+	}
+	util.Printlnf("Generated plot graph: %v", spec.PlotSortedByRequestOrderFilename)
+	return nil
+}
+
+func plotSuccessRateGraph(spec BenchmarkSpec, bench []Benchmark, stats Stats) error {
+	// SortTimestamp(bench)
+	titleStats := fmt.Sprintf("(Total %d Requests, Concurrency: %v, Max: %v, Min: %v, Avg: %v, Median: %v, %v)",
+		len(bench), spec.Concurrent, stats.Max, stats.Min, stats.Avg, stats.Med, stats.PercentileString())
+	title := spec.benchmarkTime + " - Success Rate Plot " + titleStats
+	xlabel := "X - Sorted By Request Timestamp"
+	fname := spec.PlotSuccessRateFilename
+
 	p := plot.New()
 	p.Title.Text = "\n" + title
 	p.Title.Padding = 0.1 * vg.Inch
@@ -497,7 +527,12 @@ func plotSuccessRateGraph(spec BenchmarkSpec, bench []Benchmark, title string, x
 	p.Y.Max = 101
 
 	drawSuccessRateLine(p, toSuccessRateXYs(bench), 1)
-	return p.Save(spec.PlotWidth, spec.PlotHeight, fname)
+	err := p.Save(spec.PlotWidth, spec.PlotHeight, fname)
+	if err != nil {
+		return err
+	}
+	util.Printlnf("Generated plot graph: %v", fname)
+	return nil
 }
 
 func toXYs(bench []Benchmark) plotter.XYs {
