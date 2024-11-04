@@ -38,58 +38,72 @@ const (
 type BuildRequestFunc func() (*http.Request, error)
 type ParseResponseFunc func(buf []byte, statusCode int) Result
 
-func NewRequestSender(buildReq BuildRequestFunc, parseRes ParseResponseFunc) SendRequestFunc {
-	errResult := func(err error, httpStatus int) Result {
+func doSend(c *http.Client, buildReq BuildRequestFunc, parseRes ParseResponseFunc) (Result, time.Time) {
+	errResult := func(err error, httpStatus int) (Result, time.Time) {
 		return Result{
 			HttpStatus: httpStatus,
 			Success:    false,
 			Extra: map[string]any{
 				"ERROR": err.Error(),
 			},
-		}
+		}, time.Now()
 	}
 
-	return func(c *http.Client) Result {
-		req, err := buildReq()
-		if err != nil {
-			return errResult(err, 0)
-		}
+	req, err := buildReq()
+	if err != nil {
+		return errResult(err, 0)
+	}
 
-		res, err := c.Do(req)
-		if err != nil {
-			if res != nil {
-				return errResult(err, res.StatusCode)
-			}
-			return errResult(err, 0)
-		}
-
-		buf, err := io.ReadAll(res.Body)
-		if err != nil {
+	res, err := c.Do(req)
+	if err != nil {
+		if res != nil {
 			return errResult(err, res.StatusCode)
 		}
-
-		return parseRes(buf, res.StatusCode)
+		return errResult(err, 0)
 	}
+
+	buf, err := io.ReadAll(res.Body)
+	if err != nil {
+		return errResult(err, res.StatusCode)
+	}
+	end := time.Now()
+
+	r := parseRes(buf, res.StatusCode)
+	r.HttpStatus = res.StatusCode
+	return r, end
 }
 
 type SendRequestFunc func(c *http.Client) Result
 type LogExtraStatFunc func([]Benchmark) string
 
 type BenchmarkSpec struct {
-	Concurrent  int
-	Round       int
-	Duration    time.Duration
-	SendReqFunc SendRequestFunc
+	Concurrent int
+	Round      int
+	Duration   time.Duration
+
+	// required, func to build benchmark request
+	BuildReqFunc BuildRequestFunc
+
+	// optional, by default, it considers 200 as a success.
+	ParseResFunc ParseResponseFunc
+
+	// funcs to log extra statistics information
 	LogStatFunc []LogExtraStatFunc
+
+	DebugLog          bool
+	DisablePlotGraphs bool
+
+	// do not include min/max labels on graph
+	DisablePlotInclMinMaxLabels bool
+
+	// do not draw percentile lines on graph
+	DisablePlotInclPercentileLines bool
+
+	// do not write benchmark records to file
+	DisableOutputFile bool
 
 	// rough estimate on how many benchmark results will be created by one worker, by default 1000.
 	SingleWorkerResultQueueSize int
-
-	DebugLog                       bool
-	DisablePlotGraphs              bool
-	DisablePlotInclMinMaxLabels    bool
-	DisablePlotInclPercentileLines bool
-	DisableOutputFile              bool
 
 	PlotWidth                        font.Length
 	PlotHeight                       font.Length
@@ -102,17 +116,23 @@ type BenchmarkSpec struct {
 }
 
 func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
-	durBased := false
+	if spec.BuildReqFunc == nil {
+		panic(fmt.Errorf("BuildReqFunc is required for the benchmark"))
+	}
 	if spec.SingleWorkerResultQueueSize < 1 {
 		spec.SingleWorkerResultQueueSize = DefaultResultQueueSize
 	}
 
+	durBased := false
 	if spec.Duration > 0 {
 		durBased = true
 	} else {
 		if spec.Round < 1 {
 			spec.Round = 1
 		}
+	}
+	if spec.Concurrent < 1 {
+		spec.Concurrent = 1
 	}
 
 	if spec.PlotWidth == 0 {
@@ -132,6 +152,13 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 	}
 	if spec.DataOutputFilename == "" {
 		spec.DataOutputFilename = defDataOutputFilename
+	}
+	if spec.ParseResFunc == nil {
+		spec.ParseResFunc = func(buf []byte, statusCode int) Result {
+			return Result{
+				Success: statusCode == 200,
+			}
+		}
 	}
 	spec.benchmarkTime = util.Now().FormatClassicLocale()
 
@@ -169,7 +196,7 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 			client := newClient()
 			func() {
 				defer warmupWg.Done()
-				triggerOnce(client, spec.SendReqFunc)
+				triggerOnce(client, spec.BuildReqFunc, spec.ParseResFunc)
 			}()
 			warmupWg.Wait() // synchronize all of them
 
@@ -185,13 +212,13 @@ func StartBenchmark(spec BenchmarkSpec) ([]Benchmark, Stats, error) {
 
 			if durBased {
 				for time.Since(startTime) <= spec.Duration {
-					b := triggerOnce(client, spec.SendReqFunc)
+					b := triggerOnce(client, spec.BuildReqFunc, spec.ParseResFunc)
 					b.successRate = updateCount(b.Success)
 					localStore = append(localStore, b)
 				}
 			} else {
 				for j := 0; j < spec.Round; j++ {
-					b := triggerOnce(client, spec.SendReqFunc)
+					b := triggerOnce(client, spec.BuildReqFunc, spec.ParseResFunc)
 					b.successRate = updateCount(b.Success)
 					localStore = append(localStore, b)
 				}
@@ -423,11 +450,11 @@ func printStats(spec BenchmarkSpec, bench []Benchmark, totalTime time.Duration, 
 	return stats, nil
 }
 
-func triggerOnce(client *http.Client, send SendRequestFunc) Benchmark {
+func triggerOnce(client *http.Client, buildReq BuildRequestFunc, parseRes ParseResponseFunc) Benchmark {
 	timestamp := time.Now().UnixMicro()
 	start := time.Now()
-	r := send(client)
-	took := time.Since(start)
+	r, end := doSend(client, buildReq, parseRes)
+	took := end.Sub(start)
 	bench := Benchmark{
 		Timestamp:  timestamp,
 		Took:       took,
