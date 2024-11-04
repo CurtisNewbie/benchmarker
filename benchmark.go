@@ -617,11 +617,13 @@ func drawSuccessRateLine(p *plot.Plot, dat plotter.XYs, color int) {
 		line.LineStyle.Color = plotutil.Color(color)
 		p.Add(line)
 
-		if lineLabels, err := plotter.NewLabels(plotter.XYLabels{
-			XYs:    []plotter.XY{{X: float64(mini), Y: min + 1}},
-			Labels: []string{cast.ToString(min) + "%"},
-		}); err == nil {
-			p.Add(lineLabels)
+		if min < max {
+			if lineLabels, err := plotter.NewLabels(plotter.XYLabels{
+				XYs:    []plotter.XY{{X: float64(mini), Y: min + 1}},
+				Labels: []string{cast.ToString(min) + "%"},
+			}); err == nil {
+				p.Add(lineLabels)
+			}
 		}
 
 		if lineLabels, err := plotter.NewLabels(plotter.XYLabels{
