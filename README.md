@@ -19,6 +19,11 @@ Usage of benchmarker:
         Enable debug log
   -dur duration
         Duration
+  -header string
+        HTTP Header Expression. Expression should return map[string]string object. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()
+        E.g., { "req-id": randId() }
+
+        See: https://expr-lang.org/docs/language-definition
   -json string
         Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()
         E.g., { "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }
@@ -33,7 +38,7 @@ Usage of benchmarker:
 
 
 # run benchmarker
-benchmarker -url "http://localhost:8080/data" -method POST -json '{ "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }'
+benchmarker -url "http://localhost:8080/data" -method POST -json '{ "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }' -header '{ "req-id": randId() }'
 ```
 
 ## CLI & Some Customization

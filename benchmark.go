@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -713,9 +714,10 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 
 	// cmd flags
 	var (
-		url      = flag.String("url", "", "url")
-		method   = flag.String("method", "GET", "HTTP Method")
-		jsonFlag = flag.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\n\nSee: https://expr-lang.org/docs/language-definition")
+		url        = flag.String("url", "", "url")
+		method     = flag.String("method", "GET", "HTTP Method")
+		jsonFlag   = flag.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\n\nSee: https://expr-lang.org/docs/language-definition")
+		headerFlag = flag.String("header", "", "HTTP Header Expression. Expression should return map[string]string object. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"req-id\": randId() }\n\nSee: https://expr-lang.org/docs/language-definition")
 	)
 	flag.Parse()
 
@@ -723,7 +725,7 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 		return nil, errs.NewErrf("Url is empty")
 	}
 
-	bodyExprEnv := map[string]any{
+	exprEnv := map[string]any{
 		"randId":   randId,
 		"randStr":  randStr,
 		"randPick": randPick,
@@ -731,7 +733,11 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 	}
 	var bodyExpr *expr.Expr[map[string]any] = nil
 	if *jsonFlag != "" {
-		bodyExpr = expr.MustCompileEnv[map[string]any](*jsonFlag, bodyExprEnv)
+		bodyExpr = expr.MustCompileEnv[map[string]any](*jsonFlag, exprEnv)
+	}
+	var headerExpr *expr.Expr[map[string]any] = nil
+	if *headerFlag != "" {
+		headerExpr = expr.MustCompileEnv[map[string]any](*headerFlag, exprEnv)
 	}
 
 	*method = strings.ToUpper(*method)
@@ -745,7 +751,7 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 		case http.MethodPost, http.MethodPut:
 			var body io.Reader
 			if bodyExpr != nil {
-				out, err := bodyExpr.Eval(bodyExprEnv)
+				out, err := bodyExpr.Eval(exprEnv)
 				if err != nil {
 					return nil, err
 				}
@@ -763,6 +769,22 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+
+		if headerExpr != nil {
+			hv, err := headerExpr.Eval(exprEnv)
+			if err != nil {
+				return nil, err
+			}
+			rv := reflect.ValueOf(hv)
+			if rv.Kind() == reflect.Map {
+				it := rv.MapRange()
+				for it.Next() {
+					k := cast.ToString(it.Key().Interface())
+					v := cast.ToString(it.Value().Interface())
+					req.Header.Add(k, v)
+				}
+			}
 		}
 
 		return req, nil
