@@ -16,34 +16,6 @@ func TestStartBenchmark(t *testing.T) {
 }
 ```
 
-If you need CLI support:
-
-```golang
-//   -conc int
-//         Concurrency (default 1)
-//   -concgroup string
-//         Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)
-//   -debug
-//         Enable debug log
-//   -dur duration
-//         Duration
-//   -round int
-//         Round (default 2)
-func main() {
-	_, err := benchmarker.StartBenchmarkCli(benchmarker.BenchmarkSpec{
-		BuildReqFunc: func() (*http.Request, error) {
-			return http.NewRequest(http.MethodGet, "http://localhost:8080", nil)
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-}
-
-// concurrency 3, duration 10 seconds
-// go run main.go -dur 10s -conc 3
-```
-
 If you only want to run benchmarker as cli tool:
 
 ```sh
@@ -71,6 +43,34 @@ Usage of benchmarker:
 
 # run benchmarker
 benchmarker -url "http://localhost:8080/data" -method POST -json '{ "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }'
+```
+
+If you need CLI support, at the same time you want to write some code yourself:
+
+```golang
+//   -conc int
+//         Concurrency (default 1)
+//   -concgroup string
+//         Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)
+//   -debug
+//         Enable debug log
+//   -dur duration
+//         Duration
+//   -round int
+//         Round (default 2)
+func main() {
+	_, err := benchmarker.StartBenchmarkCli(benchmarker.BenchmarkSpec{
+		BuildReqFunc: func() (*http.Request, error) {
+			return http.NewRequest(http.MethodGet, "http://localhost:8080", nil)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+// concurrency 3, duration 10 seconds
+// go run main.go -dur 10s -conc 3
 ```
 
 ## Output
