@@ -715,7 +715,7 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 	var (
 		url      = flag.String("url", "", "url")
 		method   = flag.String("method", "GET", "HTTP Method")
-		jsonFlag = flag.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\nSee: https://expr-lang.org/docs/language-definition")
+		jsonFlag = flag.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\n\nSee: https://expr-lang.org/docs/language-definition")
 	)
 	flag.Parse()
 

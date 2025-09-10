@@ -2,21 +2,11 @@
 
 Simple benchmarker written in go.
 
-## Demo
+Benchmarker is a simple library to benchmark server APIs. It also provides simple CLI tool for you to benchmark without writing single line of code, if simple expr is not considered as code :D.
 
-```golang
-func TestStartBenchmark(t *testing.T) {
-	_, _, _ = benchmarker.StartBenchmark(benchmarker.BenchmarkSpec{
-		Concurrent: 3,
-		Round:      10,
-		BuildReqFunc: func() (*http.Request, error) {
-			return http.NewRequest(http.MethodGet, "http://localhost:8080", nil)
-		},
-	})
-}
-```
+## CLI Tool
 
-If you only want to run benchmarker as cli tool:
+Run benchmarker as CLI tool:
 
 ```sh
 # benchmarker -h
@@ -32,6 +22,7 @@ Usage of benchmarker:
   -json string
         Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()
         E.g., { "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }
+
         See: https://expr-lang.org/docs/language-definition
   -method string
         HTTP Method (default "GET")
@@ -45,7 +36,9 @@ Usage of benchmarker:
 benchmarker -url "http://localhost:8080/data" -method POST -json '{ "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }'
 ```
 
-If you need CLI support, at the same time you want to write some code yourself:
+## CLI & Some Customization
+
+You need CLI support, at the same time you also want to write some code yourself:
 
 ```golang
 //   -conc int
@@ -71,6 +64,20 @@ func main() {
 
 // concurrency 3, duration 10 seconds
 // go run main.go -dur 10s -conc 3
+```
+
+## Demo
+
+```golang
+func TestStartBenchmark(t *testing.T) {
+	_, _, _ = benchmarker.StartBenchmark(benchmarker.BenchmarkSpec{
+		Concurrent: 3,
+		Round:      10,
+		BuildReqFunc: func() (*http.Request, error) {
+			return http.NewRequest(http.MethodGet, "http://localhost:8080", nil)
+		},
+	})
+}
 ```
 
 ## Output
