@@ -44,6 +44,35 @@ func main() {
 // go run main.go -dur 10s -conc 3
 ```
 
+If you only want to run benchmarker as cli tool:
+
+```sh
+# benchmarker -h
+Usage of benchmarker:
+  -conc int
+        Concurrency (default 1)
+  -concgroup string
+        Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)
+  -debug
+        Enable debug log
+  -dur duration
+        Duration
+  -json string
+        Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()
+        E.g., { "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }
+        See: https://expr-lang.org/docs/language-definition
+  -method string
+        HTTP Method (default "GET")
+  -round int
+        Round (default 2)
+  -url string
+        url
+
+
+# run benchmarker
+benchmarker -url "http://localhost:8080/data" -method POST -json '{ "orderId": randId(), "type": randPick(["1","2","3"]), "amt": randAmt() }'
+```
+
 ## Output
 
 ```

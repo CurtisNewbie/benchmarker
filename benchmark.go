@@ -1,6 +1,7 @@
 package benchmarker
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -12,7 +13,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/curtisnewbie/miso/encoding/json"
+	"github.com/curtisnewbie/miso/miso"
 	"github.com/curtisnewbie/miso/util"
+	"github.com/curtisnewbie/miso/util/errs"
+	"github.com/curtisnewbie/miso/util/expr"
+	"github.com/curtisnewbie/miso/util/idutil"
 	"github.com/spf13/cast"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/font"
@@ -51,6 +57,7 @@ func doSend(c *http.Client, buildReq BuildRequestFunc, parseRes ParseResponseFun
 
 	req, err := buildReq()
 	if err != nil {
+		miso.Errorf("Build Request failed, %v", err)
 		return errResult(err, 0)
 	}
 
@@ -682,6 +689,7 @@ func newClient() *http.Client {
 	return c
 }
 
+// cli flags
 var (
 	debug     = flag.Bool("debug", false, "Enable debug log")
 	conc      = flag.Int("conc", 1, "Concurrency")
@@ -697,6 +705,72 @@ type CliBenchmarkResult struct {
 
 func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 	flag.Parse()
+	return doBenchmarkCli(spec)
+}
+
+func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
+	spec := BenchmarkSpec{}
+
+	// cmd flags
+	var (
+		url      = flag.String("url", "", "url")
+		method   = flag.String("method", "GET", "HTTP Method")
+		jsonFlag = flag.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\nSee: https://expr-lang.org/docs/language-definition")
+	)
+	flag.Parse()
+
+	if *url == "" {
+		return nil, errs.NewErrf("Url is empty")
+	}
+
+	bodyExprEnv := map[string]any{
+		"randId":   randId,
+		"randStr":  randStr,
+		"randPick": randPick,
+		"randAmt":  randAmt,
+	}
+	var bodyExpr *expr.Expr[map[string]any] = nil
+	if *jsonFlag != "" {
+		bodyExpr = expr.MustCompileEnv[map[string]any](*jsonFlag, bodyExprEnv)
+	}
+
+	*method = strings.ToUpper(*method)
+	spec.BuildReqFunc = func() (*http.Request, error) {
+		var (
+			req *http.Request
+			err error
+		)
+
+		switch *method {
+		case http.MethodPost, http.MethodPut:
+			var body io.Reader
+			if bodyExpr != nil {
+				out, err := bodyExpr.Eval(bodyExprEnv)
+				if err != nil {
+					return nil, err
+				}
+				js, err := json.WriteJson(out)
+				if err != nil {
+					return nil, err
+				}
+				body = bytes.NewReader(js)
+			}
+			req, err = http.NewRequest(*method, *url, body)
+		case http.MethodGet, http.MethodDelete:
+			req, err = http.NewRequest(*method, *url, nil)
+		default:
+			panic("invalid method, must be GET/PUT/POST/DELETE")
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		return req, nil
+	}
+	return doBenchmarkCli(spec)
+}
+
+func doBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 	spec.Concurrent = *conc
 	spec.Round = *round
 	spec.Duration = *duration
@@ -754,4 +828,32 @@ func StartBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 		}
 	}
 	return res, nil
+}
+
+func randId() string {
+	return idutil.Id("stress_")
+}
+
+func randStr(n int) string {
+	return util.RandNum(n)
+}
+
+func randPick(v []any) any {
+	return util.RandPick(v)
+}
+
+func randAmt() float64 {
+	var s string
+	util.RandOp(
+		func() { s = util.RandNum(0) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(1) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(2) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(3) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(4) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(5) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(6) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(7) + "." + util.RandNum(3) },
+		func() { s = util.RandNum(8) + "." + util.RandNum(3) },
+	)
+	return cast.ToFloat64(s)
 }

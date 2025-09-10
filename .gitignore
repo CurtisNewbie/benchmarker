@@ -28,3 +28,4 @@ go.work.sum
 test/*.png
 *.txt
 .DS_Store
+*.png
