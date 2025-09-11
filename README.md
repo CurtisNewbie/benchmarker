@@ -6,6 +6,10 @@ Benchmarker is a simple library to benchmark server APIs. It also provides simpl
 
 ## CLI Tool
 
+```sh
+go install ./...
+```
+
 Run benchmarker as CLI tool:
 
 ```sh
