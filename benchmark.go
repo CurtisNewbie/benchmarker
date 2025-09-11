@@ -715,7 +715,7 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 
 	// cmd flags
 	var (
-		url        = flags.String("url", "", "url", true)
+		url        = flags.String("url", "", "URL", true)
 		method     = flags.String("method", "GET", "HTTP Method", false)
 		jsonFlag   = flags.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. \nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\n", false)
 		headerFlag = flags.String("header", "", "HTTP Header Expression. Expression should return map[string]string object.\nE.g., { \"req-id\": randId() }\n", false)

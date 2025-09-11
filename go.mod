@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.24.7
 
 require (
-	github.com/curtisnewbie/miso v0.2.16-0.20250911071250-92863843f768
+	github.com/curtisnewbie/miso v0.2.16-0.20250911085725-0055d6a13f95
 	github.com/spf13/cast v1.6.0
 	gonum.org/v1/plot v0.14.0
 )
