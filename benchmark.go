@@ -19,6 +19,7 @@ import (
 	"github.com/curtisnewbie/miso/util"
 	"github.com/curtisnewbie/miso/util/errs"
 	"github.com/curtisnewbie/miso/util/expr"
+	"github.com/curtisnewbie/miso/util/flags"
 	"github.com/curtisnewbie/miso/util/idutil"
 	"github.com/spf13/cast"
 	"gonum.org/v1/plot"
@@ -692,11 +693,11 @@ func newClient() *http.Client {
 
 // cli flags
 var (
-	debug     = flag.Bool("debug", false, "Enable debug log")
-	conc      = flag.Int("conc", 1, "Concurrency")
-	concGroup = flag.String("concgroup", "", "Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)")
-	round     = flag.Int("round", 2, "Round")
-	duration  = flag.Duration("dur", 0, "Duration")
+	debug     = flags.Bool("debug", false, "Enable debug log", false)
+	conc      = flags.Int("conc", 1, "Concurrency", false)
+	concGroup = flags.String("concgroup", "", "Concurrency Groups (e.g., '1,30,50', is equivalent to running the benchmark three times with concurrency 1, 30 and 50)", false)
+	round     = flags.Int("round", 2, "Round", false)
+	duration  = flags.Duration("dur", 0, "Duration", false)
 )
 
 type CliBenchmarkResult struct {
@@ -714,22 +715,23 @@ func StartBenchmarkCmd() ([]CliBenchmarkResult, error) {
 
 	// cmd flags
 	var (
-		url        = flag.String("url", "", "url")
-		method     = flag.String("method", "GET", "HTTP Method")
-		jsonFlag   = flag.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\n\nSee: https://expr-lang.org/docs/language-definition")
-		headerFlag = flag.String("header", "", "HTTP Header Expression. Expression should return map[string]string object. Builtin funcs: randId(), randStr(int), randPick([]any), randAmt()\nE.g., { \"req-id\": randId() }\n\nSee: https://expr-lang.org/docs/language-definition")
+		url        = flags.String("url", "", "url", true)
+		method     = flags.String("method", "GET", "HTTP Method", false)
+		jsonFlag   = flags.String("json", "", "Json Body Expression. Objects created by expr is serialized as Json. \nE.g., { \"orderId\": randId(), \"type\": randPick([\"1\",\"2\",\"3\"]), \"amt\": randAmt() }\n", false)
+		headerFlag = flags.String("header", "", "HTTP Header Expression. Expression should return map[string]string object.\nE.g., { \"req-id\": randId() }\n", false)
 	)
-	flag.Parse()
+	flags.WithExtra("Expression supports following builtin funcs:\n\trandId(), randStr(int), randPick([]any), randAmt()\n\nSee: https://expr-lang.org/docs/language-definition")
+	flags.Parse()
 
 	if *url == "" {
 		return nil, errs.NewErrf("Url is empty")
 	}
 
 	exprEnv := map[string]any{
-		"randId":   randId,
-		"randStr":  randStr,
-		"randPick": randPick,
-		"randAmt":  randAmt,
+		"randId":   RandId,
+		"randStr":  RandStr,
+		"randPick": RandPick,
+		"randAmt":  RandAmt,
 	}
 	var bodyExpr *expr.Expr[map[string]any] = nil
 	if *jsonFlag != "" {
@@ -852,19 +854,19 @@ func doBenchmarkCli(spec BenchmarkSpec) ([]CliBenchmarkResult, error) {
 	return res, nil
 }
 
-func randId() string {
+func RandId() string {
 	return idutil.Id("stress_")
 }
 
-func randStr(n int) string {
+func RandStr(n int) string {
 	return util.RandNum(n)
 }
 
-func randPick(v []any) any {
+func RandPick(v []any) any {
 	return util.RandPick(v)
 }
 
-func randAmt() float64 {
+func RandAmt() float64 {
 	var s string
 	util.RandOp(
 		func() { s = util.RandNum(0) + "." + util.RandNum(3) },
